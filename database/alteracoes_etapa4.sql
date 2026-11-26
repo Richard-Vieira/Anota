@@ -62,3 +62,31 @@ UPDATE servico SET codigo_tributacao = '070501',
     descricao_codigo = 'Reparação, conservação e reforma de edifícios, estradas, pontes, portos e congêneres',
     palavras_chave = 'reparo, conserto, consertei, arrumei, torneira, porta, telhado, troca'
 WHERE descricao = 'Pequenos reparos' AND usuario_id = (SELECT id FROM usuario WHERE email = 'marcos@anota.com');
+
+-- =============== CLIENTES COM ENDERECO ===============
+-- tipo: PF = pessoa fisica (CPF) ou PJ = pessoa juridica (CNPJ)
+ALTER TABLE cliente ADD tipo CHAR(2) NOT NULL DEFAULT 'PF';
+ALTER TABLE cliente ADD cep VARCHAR(8);
+ALTER TABLE cliente ADD endereco VARCHAR(150);
+ALTER TABLE cliente ADD numero VARCHAR(10);
+ALTER TABLE cliente ADD bairro VARCHAR(80);
+ALTER TABLE cliente ADD municipio VARCHAR(80);
+ALTER TABLE cliente ADD uf CHAR(2);
+ALTER TABLE cliente ADD codigo_ibge VARCHAR(7);
+ALTER TABLE cliente ADD CONSTRAINT cliente_tipo_valido CHECK (tipo IN ('PF', 'PJ'));
+
+-- o email do cliente deixou de ser obrigatorio (da pra cadastrar so com nome e CPF/CNPJ no chat)
+-- (no banco ele ja aceitava vazio, so a api que exigia)
+
+-- quem ja tinha CNPJ (14 numeros) vira pessoa juridica
+UPDATE cliente SET tipo = 'PJ' WHERE LENGTH(documento) = 14;
+
+-- enderecos dos clientes de exemplo do usuario de teste
+UPDATE cliente SET cep = '89801140', endereco = 'Rua Sete de Setembro - D', numero = '320', bairro = 'Centro', municipio = 'Chapecó', uf = 'SC', codigo_ibge = '4204202'
+WHERE documento = '52998224725' AND usuario_id = (SELECT id FROM usuario WHERE email = 'marcos@anota.com');
+UPDATE cliente SET cep = '89812650', endereco = 'Rua Marechal Cândido Rondon - D', numero = '1045', bairro = 'Esplanada', municipio = 'Chapecó', uf = 'SC', codigo_ibge = '4204202'
+WHERE documento = '38190456784' AND usuario_id = (SELECT id FROM usuario WHERE email = 'marcos@anota.com');
+UPDATE cliente SET cep = '89820000', endereco = 'Rua Victor Konder', numero = '88', bairro = 'Centro', municipio = 'Xanxerê', uf = 'SC', codigo_ibge = '4219507'
+WHERE documento = '12398765000100' AND usuario_id = (SELECT id FROM usuario WHERE email = 'marcos@anota.com');
+UPDATE cliente SET cep = '89803052', endereco = 'Rua Sete de Setembro - E', numero = '77', bairro = 'São Cristóvão', municipio = 'Chapecó', uf = 'SC', codigo_ibge = '4204202'
+WHERE documento = '71423098650' AND usuario_id = (SELECT id FROM usuario WHERE email = 'marcos@anota.com');

@@ -36,13 +36,22 @@ CREATE TABLE config_email (
 );
 
 -- clientes do MEI (documento pode ser cpf ou cnpj, so numeros)
+-- tipo: PF = pessoa fisica (CPF) ou PJ = pessoa juridica (CNPJ)
 CREATE TABLE cliente (
     id SERIAL PRIMARY KEY,
     usuario_id INT NOT NULL REFERENCES usuario(id),
+    tipo CHAR(2) NOT NULL DEFAULT 'PF' CHECK (tipo IN ('PF', 'PJ')),
     nome VARCHAR(100) NOT NULL,
     documento VARCHAR(14) NOT NULL,
     email VARCHAR(100),
-    telefone VARCHAR(20)
+    telefone VARCHAR(20),
+    cep VARCHAR(8),
+    endereco VARCHAR(150),
+    numero VARCHAR(10),
+    bairro VARCHAR(80),
+    municipio VARCHAR(80),
+    uf CHAR(2),
+    codigo_ibge VARCHAR(7)
 );
 
 -- servicos que o MEI faz

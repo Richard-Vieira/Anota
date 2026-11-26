@@ -1,39 +1,80 @@
 import { useState, useEffect } from 'react'
 import { api, formataDinheiro, pegaIniciais } from '../api.js'
+import { mascaraCPF, mascaraCNPJ, mascaraDocumento, mascaraTelefone, municipioUF, soNumeros } from '../formatos.js'
+import CamposEndereco from '../components/CamposEndereco.jsx'
+
+const vazio = {
+  tipo: 'PF', nome: '', documento: '', email: '', telefone: '',
+  cep: '', endereco: '', numero: '', bairro: '', municipio: '', uf: '', codigo_ibge: ''
+}
 
 function Clientes() {
   const [lista, setLista] = useState([])
-  const [nome, setNome] = useState('')
-  const [documento, setDocumento] = useState('')
-  const [email, setEmail] = useState('')
-  const [telefone, setTelefone] = useState('')
+  const [form, setForm] = useState(vazio)
   const [editando, setEditando] = useState(null) // id do cliente que ta editando
   const [erro, setErro] = useState('')
   const [msg, setMsg] = useState('')
-  const [notas, setNotas] = useState([]) // so pra contar as notas de cada cliente
   const [busca, setBusca] = useState('')
+  const [buscandoCnpj, setBuscandoCnpj] = useState(false)
 
   async function carregar() {
+    // a api ja manda quantas notas e o total de cada cliente
     const r = await api('/clientes')
     if (r.ok) {
       setLista(r.dados)
     } else {
       setErro(r.dados.erro)
     }
-    const r2 = await api('/notas')
-    if (r2.ok) setNotas(r2.dados)
   }
 
   useEffect(() => {
     carregar()
   }, [])
 
+  function campo(nome, valor) {
+    setForm({ ...form, [nome]: valor })
+  }
+
+  function trocaTipo(tipo) {
+    // trocou o tipo, o documento antigo nao serve mais
+    setForm({ ...form, tipo: tipo, documento: '' })
+  }
+
   function limpar() {
-    setNome('')
-    setDocumento('')
-    setEmail('')
-    setTelefone('')
+    setForm(vazio)
     setEditando(null)
+  }
+
+  // pessoa juridica: busca o nome e o endereco na BrasilAPI (pelo backend)
+  async function buscarCnpj() {
+    setErro('')
+    setMsg('')
+    if (soNumeros(form.documento).length != 14) {
+      setErro('Digite o CNPJ completo (14 números)')
+      return
+    }
+    setBuscandoCnpj(true)
+    const r = await api('/consulta/cnpj/' + soNumeros(form.documento))
+    setBuscandoCnpj(false)
+    if (!r.ok) {
+      setErro(r.dados.erro)
+      return
+    }
+    const c = r.dados
+    setForm({
+      ...form,
+      nome: c.nome || form.nome,
+      email: form.email || c.email,
+      telefone: form.telefone || c.telefone,
+      cep: c.cep || form.cep,
+      endereco: c.endereco || form.endereco,
+      numero: c.numero || form.numero,
+      bairro: c.bairro || form.bairro,
+      municipio: c.municipio || form.municipio,
+      uf: c.uf || form.uf,
+      codigo_ibge: c.codigo_ibge || form.codigo_ibge
+    })
+    setMsg('Dados da Receita preenchidos. Confira e salve.')
   }
 
   async function salvar(e) {
@@ -42,8 +83,8 @@ function Clientes() {
     setMsg('')
 
     // a validacao de verdade ta no backend, aqui so ve se ta vazio
-    if (nome == '' || documento == '' || email == '') {
-      setErro('Preencha nome, CPF/CNPJ e email')
+    if (form.nome.trim() == '' || form.documento == '') {
+      setErro('Preencha o nome e o ' + (form.tipo == 'PF' ? 'CPF' : 'CNPJ'))
       return
     }
 
@@ -54,8 +95,8 @@ function Clientes() {
       metodo = 'PUT'
     }
 
-    // o usuario_id nao vai mais, a api pega pelo token
-    const r = await api(url, { method: metodo, body: { nome, documento, email, telefone } })
+    // o usuario_id nao vai, a api pega pelo token
+    const r = await api(url, { method: metodo, body: form })
     if (!r.ok) {
       setErro(r.dados.erro)
       return
@@ -69,10 +110,11 @@ function Clientes() {
     setErro('')
     setMsg('')
     setEditando(cli.id)
-    setNome(cli.nome)
-    setDocumento(cli.documento)
-    setEmail(cli.email || '')
-    setTelefone(cli.telefone || '')
+    // troca null por '' pros inputs nao reclamarem
+    const f = {}
+    for (const k in vazio) f[k] = cli[k] == null ? '' : cli[k]
+    f.tipo = cli.tipo || (String(cli.documento).length == 14 ? 'PJ' : 'PF')
+    setForm(f)
   }
 
   async function excluir(id) {
@@ -84,64 +126,98 @@ function Clientes() {
       setErro(r.dados.erro)
     } else {
       setMsg('Cliente excluído')
+      if (editando == id) limpar()
       carregar()
     }
   }
 
-  // quantas notas e quanto cada cliente ja pagou (so emitidas e enviadas, igual o faturamento)
-  function resumoCliente(id) {
-    const dele = notas.filter(n => n.cliente_id == id && (n.status == 'emitida' || n.status == 'enviada'))
-    const total = dele.reduce((soma, n) => soma + Number(n.valor), 0)
-    return { qtd: dele.length, total }
-  }
-
   const b = busca.trim().toLowerCase()
-  const filtrados = lista.filter(c => c.nome.toLowerCase().includes(b) || String(c.documento).includes(b))
+  const bNum = soNumeros(b)
+  const filtrados = lista.filter(c =>
+    c.nome.toLowerCase().includes(b) ||
+    (bNum != '' && String(c.documento).includes(bNum)) ||
+    String(c.municipio || '').toLowerCase().includes(b)
+  )
+
+  const pj = form.tipo == 'PJ'
 
   return (
     <div className="duas-colunas lista-e-form">
       <div>
         <h1>Clientes</h1>
-        <input className="busca" value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por nome ou CPF/CNPJ" />
+        <input className="busca" value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por nome, CPF/CNPJ ou cidade" />
 
         {filtrados.length == 0 && (
           <p className="lista-vazia">{lista.length == 0 ? 'Nenhum cliente cadastrado ainda' : 'Nenhum cliente encontrado'}</p>
         )}
-        {filtrados.map(c => {
-          const r = resumoCliente(c.id)
-          return (
-            <div className="lista-linha" key={c.id}>
-              <span className="iniciais">{pegaIniciais(c.nome)}</span>
-              <div className="lista-info">
-                <div className="lista-nome">{c.nome}</div>
-                <div className="lista-doc">{c.documento}{c.email ? ' · ' + c.email : ''}</div>
+        {filtrados.map(c => (
+          <div className={'lista-linha' + (editando == c.id ? ' selecionada' : '')} key={c.id}>
+            <span className="iniciais">{pegaIniciais(c.nome)}</span>
+            <div className="lista-info">
+              <div className="lista-nome">
+                {c.nome}
+                <span className="codigo">{c.tipo == 'PJ' ? 'PJ' : 'PF'}</span>
               </div>
-              <div className="lista-numeros">
-                <strong>{formataDinheiro(r.total)}</strong>
-                {r.qtd} {r.qtd == 1 ? 'nota' : 'notas'}
-              </div>
-              <div className="lista-acoes">
-                <button className="pequeno" onClick={() => editar(c)}>Editar</button>
-                <button className="pequeno perigo" onClick={() => excluir(c.id)}>Excluir</button>
+              <div className="lista-doc">
+                {mascaraDocumento(c.documento)}
+                {c.municipio ? ' · ' + municipioUF(c.municipio, c.uf) : ''}
+                {c.email ? ' · ' + c.email : ''}
               </div>
             </div>
-          )
-        })}
+            <div className="lista-numeros">
+              <strong>{formataDinheiro(c.total_notas)}</strong>
+              {c.qtd_notas} {c.qtd_notas == 1 ? 'nota' : 'notas'}
+            </div>
+            <div className="lista-acoes">
+              <button className="pequeno" onClick={() => editar(c)}>Editar</button>
+              <button className="pequeno perigo" onClick={() => excluir(c.id)}>Excluir</button>
+            </div>
+          </div>
+        ))}
       </div>
 
-      <form className="painel" onSubmit={salvar}>
+      <form className="painel painel-fixo" onSubmit={salvar}>
         <h2>{editando ? 'Editar cliente' : 'Novo cliente'}</h2>
-        <label>Nome</label>
-        <input value={nome} onChange={e => setNome(e.target.value)} />
 
-        <label>CPF ou CNPJ</label>
-        <input value={documento} onChange={e => setDocumento(e.target.value)} placeholder="só números ou com pontuação" />
+        <div className="seletor-tipo">
+          <button type="button" className={!pj ? 'ativo' : ''} onClick={() => trocaTipo('PF')}>Pessoa física</button>
+          <button type="button" className={pj ? 'ativo' : ''} onClick={() => trocaTipo('PJ')}>Pessoa jurídica</button>
+        </div>
 
-        <label>E-mail</label>
-        <input type="email" value={email} onChange={e => setEmail(e.target.value)} />
+        <label>{pj ? 'CNPJ' : 'CPF'}</label>
+        <div className="grade-campos">
+          <div className="campo-largo">
+            <input
+              value={pj ? mascaraCNPJ(form.documento) : mascaraCPF(form.documento)}
+              onChange={e => campo('documento', soNumeros(e.target.value))}
+              placeholder={pj ? '00.000.000/0000-00' : '000.000.000-00'}
+              inputMode="numeric"
+            />
+          </div>
+          {pj && (
+            <div className="campo-botao">
+              <button type="button" className="secundario" onClick={buscarCnpj} disabled={buscandoCnpj}>
+                {buscandoCnpj ? 'Buscando...' : 'Buscar pelo CNPJ'}
+              </button>
+            </div>
+          )}
+        </div>
 
-        <label>Telefone</label>
-        <input value={telefone} onChange={e => setTelefone(e.target.value)} />
+        <label>{pj ? 'Razão social' : 'Nome'}</label>
+        <input value={form.nome} onChange={e => campo('nome', e.target.value)} />
+
+        <div className="grade-campos">
+          <div className="campo-metade">
+            <label>E-mail</label>
+            <input type="email" value={form.email} onChange={e => campo('email', e.target.value)} />
+          </div>
+          <div className="campo-metade">
+            <label>Telefone</label>
+            <input value={mascaraTelefone(form.telefone)} onChange={e => campo('telefone', mascaraTelefone(e.target.value))} placeholder="(00) 00000-0000" />
+          </div>
+        </div>
+
+        <CamposEndereco dados={form} muda={novo => setForm(novo)} />
 
         {erro && <p className="erro">{erro}</p>}
         {msg && <p className="sucesso">{msg}</p>}

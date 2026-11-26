@@ -6,11 +6,16 @@ INSERT INTO usuario (nome, cnpj, email, senha, inscricao_municipal, telefone, ce
  '123456', '(49) 99800-1122', '89801000', 'Avenida Getúlio Dorneles Vargas', '1500', 'Centro', 'Chapecó', 'SC', '4204202');
 
 -- clientes (cpf e cnpj validos, gerei pra teste)
-INSERT INTO cliente (usuario_id, nome, documento, email, telefone) VALUES
-(1, 'Joana Silva', '52998224725', 'joana.silva@email.com', '(49) 99911-2233'),
-(1, 'Carlos Souza', '38190456784', 'carlos.souza@email.com', '(49) 98822-3344'),
-(1, 'Construtora Oeste Ltda', '12398765000100', 'contato@construtoraoeste.com.br', '(49) 3322-4455'),
-(1, 'Ana Lima', '71423098650', 'ana.lima@email.com', '(49) 99133-5566');
+-- os enderecos usam CEPs de verdade (conferidos no ViaCEP)
+INSERT INTO cliente (usuario_id, tipo, nome, documento, email, telefone, cep, endereco, numero, bairro, municipio, uf, codigo_ibge) VALUES
+(1, 'PF', 'Joana Silva', '52998224725', 'joana.silva@email.com', '(49) 99911-2233',
+ '89801140', 'Rua Sete de Setembro - D', '320', 'Centro', 'Chapecó', 'SC', '4204202'),
+(1, 'PF', 'Carlos Souza', '38190456784', 'carlos.souza@email.com', '(49) 98822-3344',
+ '89812650', 'Rua Marechal Cândido Rondon - D', '1045', 'Esplanada', 'Chapecó', 'SC', '4204202'),
+(1, 'PJ', 'Construtora Oeste Ltda', '12398765000100', 'contato@construtoraoeste.com.br', '(49) 3322-4455',
+ '89820000', 'Rua Victor Konder', '88', 'Centro', 'Xanxerê', 'SC', '4219507'),
+(1, 'PF', 'Ana Lima', '71423098650', 'ana.lima@email.com', '(49) 99133-5566',
+ '89803052', 'Rua Sete de Setembro - E', '77', 'São Cristóvão', 'Chapecó', 'SC', '4204202');
 
 -- codigos de tributacao nacional (construcao civil e reformas = subitens 7.02 e 7.05 da LC 116)
 -- conferir sempre na tabela oficial do portal da NFS-e: https://www.gov.br/nfse

@@ -360,7 +360,14 @@ app.post('/configuracoes/email/teste', verificaToken, async (req, res) => {
 // =============== CLIENTES ===============
 app.get('/clientes', verificaToken, async (req, res) => {
   try {
-    const dados = await pool.query('SELECT * FROM cliente WHERE usuario_id = $1 ORDER BY nome', [req.usuario_id]);
+    // ja traz quantas notas e quanto cada cliente pagou (so emitidas e enviadas, igual o faturamento)
+    const dados = await pool.query(
+      `SELECT c.*,
+              (SELECT COUNT(*) FROM nota_fiscal n WHERE n.cliente_id = c.id AND n.status IN ('emitida', 'enviada'))::int AS qtd_notas,
+              (SELECT COALESCE(SUM(n.valor), 0) FROM nota_fiscal n WHERE n.cliente_id = c.id AND n.status IN ('emitida', 'enviada')) AS total_notas
+       FROM cliente c WHERE c.usuario_id = $1 ORDER BY c.nome`,
+      [req.usuario_id]
+    );
     res.json(dados.rows);
   } catch (err) {
     trataErro(res, err);
@@ -368,31 +375,67 @@ app.get('/clientes', verificaToken, async (req, res) => {
 });
 
 // validacao do cliente (era repetida no post e no put, juntei aqui)
+// o email agora e opcional: no chat da pra cadastrar so com o nome e o CPF/CNPJ
 function validaCliente(body) {
-  const { nome, documento, email } = body;
+  const { tipo, nome, documento, email } = body;
+  if (tipo != 'PF' && tipo != 'PJ') return 'Escolha se é pessoa física ou jurídica';
   if (val.vazio(nome)) return 'O nome do cliente é obrigatório';
-  if (val.vazio(documento)) return 'O CPF ou CNPJ é obrigatório';
-  if (!val.validarDocumento(documento)) return 'CPF ou CNPJ inválido';
-  if (val.vazio(email)) return 'O email é obrigatório';
-  if (!val.validarEmail(email)) return 'Email inválido';
-  return null;
+  if (String(nome).trim().length > 100) return 'O nome pode ter no máximo 100 letras';
+  if (val.vazio(documento)) return tipo == 'PF' ? 'O CPF é obrigatório' : 'O CNPJ é obrigatório';
+  if (tipo == 'PF' && !val.validarCPF(documento)) return 'CPF inválido';
+  if (tipo == 'PJ' && !val.validarCNPJ(documento)) return 'CNPJ inválido';
+  if (!val.vazio(email) && !val.validarEmail(email)) return 'E-mail inválido';
+  return validaEndereco(body);
+}
+
+// parametros na ordem das colunas (igual no insert e no update)
+function paramsCliente(b) {
+  return [
+    b.tipo,
+    b.nome.trim(),
+    val.soNumeros(b.documento),
+    val.vazio(b.email) ? null : b.email.trim().toLowerCase(),
+    textoOuNull(b.telefone, 20),
+    val.vazio(b.cep) ? null : val.soNumeros(b.cep),
+    textoOuNull(b.endereco, 150),
+    textoOuNull(b.numero, 10),
+    textoOuNull(b.bairro, 80),
+    textoOuNull(b.municipio, 80),
+    val.vazio(b.uf) ? null : b.uf.trim().toUpperCase(),
+    val.vazio(b.codigo_ibge) ? null : val.soNumeros(b.codigo_ibge)
+  ];
+}
+
+// nao deixa cadastrar 2 clientes com o mesmo CPF/CNPJ pro mesmo usuario
+async function documentoRepetido(usuario_id, documento, idAtual) {
+  const r = await pool.query(
+    'SELECT nome FROM cliente WHERE usuario_id = $1 AND documento = $2 AND id <> $3',
+    [usuario_id, val.soNumeros(documento), idAtual || 0]
+  );
+  return r.rows.length > 0 ? r.rows[0].nome : null;
 }
 
 app.post('/clientes', verificaToken, async (req, res) => {
-  // pega os dados do form
-  const { nome, documento, email, telefone } = req.body;
-  console.log('novo cliente', req.body);
+  console.log('novo cliente', req.body.nome);
 
+  // se nao mandar o tipo, descobre pelo tamanho do documento
+  if (!req.body.tipo) {
+    req.body.tipo = val.soNumeros(req.body.documento).length == 14 ? 'PJ' : 'PF';
+  }
   const erro = validaCliente(req.body);
   if (erro) {
     return res.status(400).json({ erro: erro });
   }
 
   try {
-    const doc = val.soNumeros(documento);
+    const repetido = await documentoRepetido(req.usuario_id, req.body.documento, 0);
+    if (repetido) {
+      return res.status(400).json({ erro: 'Esse CPF/CNPJ já está cadastrado para ' + repetido });
+    }
     const resultado = await pool.query(
-      'INSERT INTO cliente (usuario_id, nome, documento, email, telefone) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [req.usuario_id, nome.trim(), doc, email.trim(), telefone || null]
+      `INSERT INTO cliente (tipo, nome, documento, email, telefone, cep, endereco, numero, bairro, municipio, uf, codigo_ibge, usuario_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
+      [...paramsCliente(req.body), req.usuario_id]
     );
     res.status(201).json(resultado.rows[0]);
   } catch (err) {
@@ -402,18 +445,25 @@ app.post('/clientes', verificaToken, async (req, res) => {
 
 app.put('/clientes/:id', verificaToken, async (req, res) => {
   const id = req.params.id;
-  const { nome, documento, email, telefone } = req.body;
-
+  if (!req.body.tipo) {
+    req.body.tipo = val.soNumeros(req.body.documento).length == 14 ? 'PJ' : 'PF';
+  }
   const erro = validaCliente(req.body);
   if (erro) {
     return res.status(400).json({ erro: erro });
   }
 
   try {
+    const repetido = await documentoRepetido(req.usuario_id, req.body.documento, id);
+    if (repetido) {
+      return res.status(400).json({ erro: 'Esse CPF/CNPJ já está cadastrado para ' + repetido });
+    }
     // o AND usuario_id garante que so altera cliente que e dele
     const res2 = await pool.query(
-      'UPDATE cliente SET nome = $1, documento = $2, email = $3, telefone = $4 WHERE id = $5 AND usuario_id = $6 RETURNING *',
-      [nome.trim(), val.soNumeros(documento), email.trim(), telefone || null, id, req.usuario_id]
+      `UPDATE cliente SET tipo = $1, nome = $2, documento = $3, email = $4, telefone = $5, cep = $6, endereco = $7,
+              numero = $8, bairro = $9, municipio = $10, uf = $11, codigo_ibge = $12
+       WHERE id = $13 AND usuario_id = $14 RETURNING *`,
+      [...paramsCliente(req.body), id, req.usuario_id]
     );
     if (res2.rows.length == 0) {
       return res.status(404).json({ erro: 'Cliente não encontrado' });
