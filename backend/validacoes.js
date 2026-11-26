@@ -81,7 +81,34 @@ function validarValor(valor) {
   return true;
 }
 
+// CEP tem que ter 8 numeros (aceita com o traco)
+function validarCEP(cep) {
+  return /^\d{8}$/.test(soNumeros(cep));
+}
+
+// UF = sigla do estado, 2 letras
+const UFS = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR',
+  'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'];
+function validarUF(uf) {
+  return UFS.includes(String(uf || '').trim().toUpperCase());
+}
+
+// codigo IBGE do municipio tem 7 numeros (ex: Chapeco = 4204202)
+function validarIBGE(codigo) {
+  return /^\d{7}$/.test(soNumeros(codigo));
+}
+
+// telefone com DDD: 10 ou 11 numeros
+function validarTelefone(tel) {
+  const t = soNumeros(tel);
+  return t.length == 10 || t.length == 11;
+}
+
 module.exports = {
+  validarCEP,
+  validarUF,
+  validarIBGE,
+  validarTelefone,
   vazio,
   soNumeros,
   validarEmail,

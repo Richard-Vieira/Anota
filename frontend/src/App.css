@@ -739,6 +739,95 @@ td.valor-celula {
   padding: 24px 0;
 }
 
+/* =============== configuracoes =============== */
+.config-tela {
+  max-width: 720px;
+}
+
+.abas {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid #DCE1DE;
+  margin-bottom: 28px;
+}
+
+.abas button {
+  height: 42px;
+  margin: 0 0 -1px;
+  padding: 0 16px;
+  background: transparent;
+  color: #5A6560;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+}
+
+.abas button:hover {
+  background: transparent;
+  color: #16201C;
+}
+
+.abas button.ativa {
+  color: #16201C;
+  border-bottom-color: #0F6E56;
+}
+
+.config-secao {
+  border: 1px solid #DCE1DE;
+  border-radius: 14px;
+  padding: 8px 24px 24px;
+  margin-bottom: 20px;
+}
+
+.config-secao h2 {
+  font-size: 18px;
+  margin: 16px 0 0;
+}
+
+/* campo que o usuario nao pode mudar (situacao no simples) */
+.campo-fixo {
+  background: #F3F6F4;
+  color: #4F5B56;
+}
+
+/* campos lado a lado (cep + ajuda, endereco + numero, municipio + uf) */
+.grade-campos {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.grade-campos > div {
+  min-width: 0;
+}
+
+.campo-largo {
+  flex: 1;
+}
+
+.campo-curto {
+  width: 110px;
+}
+
+.campo-metade {
+  flex: 1;
+}
+
+.campo-cep {
+  width: 160px;
+}
+
+.campo-ajuda-cep {
+  flex: 1;
+  padding-bottom: 13px;
+}
+
+.campo-botao button {
+  margin: 0;
+  height: 46px;
+  white-space: nowrap;
+}
+
 /* =============== celular =============== */
 @media (max-width: 900px) {
   .duas-colunas,

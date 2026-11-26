@@ -1,61 +1,86 @@
 // envio de email com o nodemailer
-// se tiver SMTP no .env usa ele, se nao usa uma conta de teste do Ethereal
-// (o Ethereal nao entrega o email de verdade, mas da um link pra ver como ficou)
+// ordem que ele tenta:
+//  1. o SMTP que o usuario salvou na tela Configuracoes > E-mail
+//  2. o SMTP do .env
+//  3. uma conta de teste do Ethereal (nao entrega de verdade, mas da um link pra ver como ficou)
 require('dotenv').config();
 const nodemailer = require('nodemailer');
 
-let transporte = null;
-let usandoTeste = false;
-let remetente = '';
+// o do .env e o do Ethereal sao iguais pra todo mundo, entao cria uma vez so e guarda
+let transporteGeral = null;
+let remetenteGeral = '';
+let geralETeste = false;
 
-async function pegaTransporte() {
-  // so cria uma vez
-  if (transporte) return transporte;
+async function pegaTransporteGeral() {
+  if (transporteGeral) return transporteGeral;
 
   if (process.env.SMTP_HOST) {
     const porta = Number(process.env.SMTP_PORT || 587);
-    transporte = nodemailer.createTransport({
+    transporteGeral = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: porta,
       secure: porta == 465, // 465 e com ssl direto, 587 nao
       auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
     });
-    remetente = process.env.SMTP_FROM || process.env.SMTP_USER;
-    console.log('email: usando o SMTP', process.env.SMTP_HOST);
+    remetenteGeral = process.env.SMTP_FROM || process.env.SMTP_USER;
+    console.log('email: usando o SMTP do .env', process.env.SMTP_HOST);
   } else {
     // cria uma conta de teste na hora
     const conta = await nodemailer.createTestAccount();
-    transporte = nodemailer.createTransport({
+    transporteGeral = nodemailer.createTransport({
       host: conta.smtp.host,
       port: conta.smtp.port,
       secure: conta.smtp.secure,
       auth: { user: conta.user, pass: conta.pass }
     });
-    remetente = conta.user;
-    usandoTeste = true;
-    console.log('email: sem SMTP no .env, usando conta de teste do Ethereal', conta.user);
+    remetenteGeral = conta.user;
+    geralETeste = true;
+    console.log('email: sem SMTP, usando conta de teste do Ethereal', conta.user);
   }
-  return transporte;
+  return transporteGeral;
 }
 
-// manda o email e devolve { teste, link }
-async function enviarEmail(para, assunto, texto, anexo) {
-  const t = await pegaTransporte();
-  const info = await t.sendMail({
-    from: '"ANota" <' + remetente + '>',
+// manda o email e devolve { teste, link, origem }
+// config = o SMTP do usuario (vem do banco com a senha ja descriptografada) ou null
+async function enviarEmail(para, assunto, texto, anexo, config) {
+  let transporte;
+  let de;
+  let teste = false;
+  let origem;
+
+  if (config && config.smtp_host) {
+    const porta = Number(config.smtp_porta || 587);
+    transporte = nodemailer.createTransport({
+      host: config.smtp_host,
+      port: porta,
+      secure: porta == 465,
+      auth: { user: config.smtp_usuario, pass: config.smtp_senha },
+      connectionTimeout: 15000 // se o servidor nao responder em 15s desiste
+    });
+    de = '"' + (config.nome_remetente || 'ANota').replace(/"/g, '') + '" <' + config.smtp_usuario + '>';
+    origem = 'usuario';
+  } else {
+    transporte = await pegaTransporteGeral();
+    de = '"ANota" <' + remetenteGeral + '>';
+    teste = geralETeste;
+    origem = teste ? 'ethereal' : 'env';
+  }
+
+  const info = await transporte.sendMail({
+    from: de,
     to: para,
     subject: assunto,
     text: texto,
     attachments: anexo ? [anexo] : []
   });
-  console.log('email enviado', info.messageId);
+  console.log('email enviado (' + origem + ')', info.messageId);
 
   let link = null;
-  if (usandoTeste) {
+  if (teste) {
     link = nodemailer.getTestMessageUrl(info);
     console.log('ver o email em:', link);
   }
-  return { teste: usandoTeste, link: link };
+  return { teste: teste, link: link, origem: origem };
 }
 
 module.exports = { enviarEmail };

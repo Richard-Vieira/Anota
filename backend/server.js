@@ -10,6 +10,8 @@ const { gerarToken, verificaToken } = require('./auth');
 const ia = require('./ia');
 const { gerarPdf } = require('./pdf');
 const { enviarEmail } = require('./email');
+const cripto = require('./cripto');
+const { consultaCep, consultaCnpj, ErroConsulta } = require('./consultas');
 
 const app = express();
 app.use(cors());
@@ -121,6 +123,239 @@ app.post('/login', async (req, res) => {
 
 // daqui pra baixo todas as rotas usam o verificaToken
 // o usuario_id vem do token (req.usuario_id), nao mais da query/body
+
+// =============== CONSULTAS (ViaCEP e BrasilAPI) ===============
+// o front chama aqui e o backend chama a API de fora (assim da pra validar e tratar o erro num lugar so)
+app.get('/consulta/cep/:cep', verificaToken, async (req, res) => {
+  const cep = val.soNumeros(req.params.cep);
+  if (!val.validarCEP(cep)) {
+    return res.status(400).json({ erro: 'O CEP precisa ter 8 números' });
+  }
+  try {
+    res.json(await consultaCep(cep));
+  } catch (err) {
+    if (err instanceof ErroConsulta) return res.status(err.status).json({ erro: err.message });
+    trataErro(res, err);
+  }
+});
+
+app.get('/consulta/cnpj/:cnpj', verificaToken, async (req, res) => {
+  const cnpj = val.soNumeros(req.params.cnpj);
+  if (!val.validarCNPJ(cnpj)) {
+    return res.status(400).json({ erro: 'CNPJ inválido' });
+  }
+  try {
+    res.json(await consultaCnpj(cnpj));
+  } catch (err) {
+    if (err instanceof ErroConsulta) return res.status(err.status).json({ erro: err.message });
+    trataErro(res, err);
+  }
+});
+
+// valida os campos de endereco que se repetem no prestador e no cliente
+// (todos opcionais, mas se vier tem que estar certo)
+function validaEndereco(body) {
+  if (!val.vazio(body.cep) && !val.validarCEP(body.cep)) return 'O CEP precisa ter 8 números';
+  if (!val.vazio(body.uf) && !val.validarUF(body.uf)) return 'UF inválida (use a sigla do estado, ex: SC)';
+  if (!val.vazio(body.codigo_ibge) && !val.validarIBGE(body.codigo_ibge)) return 'O código IBGE do município tem 7 números';
+  if (!val.vazio(body.telefone) && !val.validarTelefone(body.telefone)) return 'Telefone inválido (coloque o DDD)';
+  if (!val.vazio(body.numero) && String(body.numero).length > 10) return 'Número do endereço muito grande';
+  return null;
+}
+
+// deixa vazio como null e corta o texto no tamanho da coluna
+function textoOuNull(v, tamanho) {
+  if (val.vazio(v)) return null;
+  return String(v).trim().substring(0, tamanho);
+}
+
+// =============== CONFIGURACOES: MEUS DADOS ===============
+// o "Simples Nacional" nao fica no banco: o ANota e so pra MEI, entao e sempre o mesmo texto
+const SIMPLES_NACIONAL = 'Optante - Microempreendedor Individual (MEI)';
+
+app.get('/configuracoes/dados', verificaToken, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT id, nome, cnpj, email, inscricao_municipal, telefone, cep, endereco, numero, bairro, municipio, uf, codigo_ibge
+       FROM usuario WHERE id = $1`,
+      [req.usuario_id]
+    );
+    if (r.rows.length == 0) {
+      return res.status(404).json({ erro: 'Usuário não encontrado' });
+    }
+    const dados = r.rows[0];
+    dados.simples_nacional = SIMPLES_NACIONAL;
+    res.json(dados);
+  } catch (err) {
+    trataErro(res, err);
+  }
+});
+
+app.put('/configuracoes/dados', verificaToken, async (req, res) => {
+  const b = req.body;
+  if (val.vazio(b.nome)) return res.status(400).json({ erro: 'Informe o nome' });
+  if (val.vazio(b.cnpj) || !val.validarCNPJ(b.cnpj)) return res.status(400).json({ erro: 'CNPJ inválido' });
+  if (val.vazio(b.email) || !val.validarEmail(b.email)) return res.status(400).json({ erro: 'E-mail inválido' });
+  if (!val.vazio(b.inscricao_municipal) && !/^\d{1,20}$/.test(val.soNumeros(b.inscricao_municipal))) {
+    return res.status(400).json({ erro: 'Inscrição municipal inválida' });
+  }
+  const erroEnd = validaEndereco(b);
+  if (erroEnd) return res.status(400).json({ erro: erroEnd });
+
+  try {
+    const cnpj = val.soNumeros(b.cnpj);
+    const email = b.email.trim().toLowerCase();
+    // outro usuario ja usa esse email ou cnpj?
+    const existe = await pool.query('SELECT id FROM usuario WHERE (email = $1 OR cnpj = $2) AND id <> $3', [email, cnpj, req.usuario_id]);
+    if (existe.rows.length > 0) {
+      return res.status(400).json({ erro: 'Já existe outra conta com esse e-mail ou CNPJ' });
+    }
+
+    const r = await pool.query(
+      `UPDATE usuario SET nome = $1, cnpj = $2, email = $3, inscricao_municipal = $4, telefone = $5, cep = $6,
+              endereco = $7, numero = $8, bairro = $9, municipio = $10, uf = $11, codigo_ibge = $12
+       WHERE id = $13
+       RETURNING id, nome, cnpj, email, inscricao_municipal, telefone, cep, endereco, numero, bairro, municipio, uf, codigo_ibge`,
+      [
+        b.nome.trim().substring(0, 100), cnpj, email,
+        val.vazio(b.inscricao_municipal) ? null : val.soNumeros(b.inscricao_municipal),
+        textoOuNull(b.telefone, 20),
+        val.vazio(b.cep) ? null : val.soNumeros(b.cep),
+        textoOuNull(b.endereco, 150), textoOuNull(b.numero, 10), textoOuNull(b.bairro, 80), textoOuNull(b.municipio, 80),
+        val.vazio(b.uf) ? null : b.uf.trim().toUpperCase(),
+        val.vazio(b.codigo_ibge) ? null : val.soNumeros(b.codigo_ibge),
+        req.usuario_id
+      ]
+    );
+    const dados = r.rows[0];
+    dados.simples_nacional = SIMPLES_NACIONAL;
+    res.json(dados);
+  } catch (err) {
+    trataErro(res, err);
+  }
+});
+
+// =============== CONFIGURACOES: E-MAIL ===============
+// a senha nunca volta pro front, so avisa se ja tem uma salva
+app.get('/configuracoes/email', verificaToken, async (req, res) => {
+  try {
+    const r = await pool.query('SELECT * FROM config_email WHERE usuario_id = $1', [req.usuario_id]);
+    if (r.rows.length == 0) {
+      return res.json({ configurado: false, smtp_host: '', smtp_porta: 587, smtp_usuario: '', nome_remetente: '', tem_senha: false });
+    }
+    const c = r.rows[0];
+    res.json({
+      configurado: true,
+      smtp_host: c.smtp_host,
+      smtp_porta: c.smtp_porta,
+      smtp_usuario: c.smtp_usuario,
+      nome_remetente: c.nome_remetente || '',
+      tem_senha: !!c.smtp_senha
+    });
+  } catch (err) {
+    trataErro(res, err);
+  }
+});
+
+app.put('/configuracoes/email', verificaToken, async (req, res) => {
+  const { smtp_host, smtp_porta, smtp_usuario, smtp_senha, nome_remetente } = req.body;
+
+  // mandou tudo vazio = quer apagar a configuracao e voltar pro e-mail padrao
+  if (val.vazio(smtp_host) && val.vazio(smtp_usuario) && val.vazio(smtp_senha)) {
+    try {
+      await pool.query('DELETE FROM config_email WHERE usuario_id = $1', [req.usuario_id]);
+      return res.json({ mensagem: 'Configuração removida, as notas vão pelo e-mail padrão do sistema', configurado: false });
+    } catch (err) {
+      return trataErro(res, err);
+    }
+  }
+
+  if (val.vazio(smtp_host) || !/^[a-zA-Z0-9.-]+$/.test(String(smtp_host).trim())) {
+    return res.status(400).json({ erro: 'Servidor SMTP inválido (ex: smtp.gmail.com)' });
+  }
+  const porta = Number(smtp_porta);
+  if (!Number.isInteger(porta) || porta < 1 || porta > 65535) {
+    return res.status(400).json({ erro: 'Porta inválida (normalmente 587 ou 465)' });
+  }
+  if (val.vazio(smtp_usuario)) {
+    return res.status(400).json({ erro: 'Informe o usuário do SMTP (normalmente o seu e-mail)' });
+  }
+  if (!val.vazio(smtp_senha) && !cripto.temChave()) {
+    return res.status(500).json({ erro: 'O servidor está sem CRIPTO_CHAVE no .env, não dá pra salvar a senha' });
+  }
+
+  try {
+    const atual = await pool.query('SELECT smtp_senha FROM config_email WHERE usuario_id = $1', [req.usuario_id]);
+    // se nao mandou senha nova, mantem a que ja estava salva
+    let senha = atual.rows.length > 0 ? atual.rows[0].smtp_senha : null;
+    if (!val.vazio(smtp_senha)) {
+      senha = cripto.criptografar(String(smtp_senha));
+    }
+    if (!senha) {
+      return res.status(400).json({ erro: 'Informe a senha do SMTP' });
+    }
+
+    await pool.query(
+      `INSERT INTO config_email (usuario_id, smtp_host, smtp_porta, smtp_usuario, smtp_senha, nome_remetente)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (usuario_id) DO UPDATE SET smtp_host = $2, smtp_porta = $3, smtp_usuario = $4, smtp_senha = $5, nome_remetente = $6`,
+      [req.usuario_id, String(smtp_host).trim(), porta, String(smtp_usuario).trim().substring(0, 100), senha, textoOuNull(nome_remetente, 100)]
+    );
+    res.json({ mensagem: 'Configuração de e-mail salva', configurado: true, tem_senha: true });
+  } catch (err) {
+    trataErro(res, err);
+  }
+});
+
+// pega o SMTP do usuario com a senha aberta (so usa aqui dentro, nunca manda pro front)
+async function pegaConfigEmail(usuario_id) {
+  const r = await pool.query('SELECT * FROM config_email WHERE usuario_id = $1', [usuario_id]);
+  if (r.rows.length == 0) return null;
+  const c = r.rows[0];
+  try {
+    c.smtp_senha = cripto.descriptografar(c.smtp_senha);
+  } catch (err) {
+    // trocou a CRIPTO_CHAVE e nao da mais pra abrir a senha
+    console.log('nao consegui abrir a senha do smtp:', err.message);
+    throw new Error('Não foi possível ler a senha do e-mail salva. Salve a senha de novo em Configurações.');
+  }
+  return c;
+}
+
+// POST /configuracoes/email/teste - manda um email de teste pro proprio usuario
+app.post('/configuracoes/email/teste', verificaToken, async (req, res) => {
+  try {
+    const u = await pool.query('SELECT nome, email FROM usuario WHERE id = $1', [req.usuario_id]);
+    let config;
+    try {
+      config = await pegaConfigEmail(req.usuario_id);
+    } catch (err) {
+      return res.status(400).json({ erro: err.message });
+    }
+
+    let envio;
+    try {
+      envio = await enviarEmail(
+        u.rows[0].email,
+        'Teste de e-mail do ANota',
+        'Olá, ' + u.rows[0].nome + '!\n\nSe você recebeu esta mensagem, o envio de notas por e-mail do ANota está funcionando.\n\nANota',
+        null,
+        config
+      );
+    } catch (err) {
+      console.log('erro no email de teste:', err.message);
+      return res.status(400).json({ erro: 'Não consegui enviar: ' + err.message });
+    }
+    res.json({
+      mensagem: 'E-mail de teste enviado para ' + u.rows[0].email,
+      origem: envio.origem,
+      teste: envio.teste,
+      link: envio.link
+    });
+  } catch (err) {
+    trataErro(res, err);
+  }
+});
 
 // =============== CLIENTES ===============
 app.get('/clientes', verificaToken, async (req, res) => {
@@ -477,15 +712,23 @@ app.post('/notas/:id/enviar-email', verificaToken, async (req, res) => {
       'referente a "' + nota.descricao + '", no valor de ' + valor + '.\n\n' +
       'Obrigado pela preferência!\n' + nota.prestador_nome;
 
+    // usa o SMTP que o usuario salvou em Configuracoes (se nao tiver, o email.js usa o .env ou o Ethereal)
+    let config;
+    try {
+      config = await pegaConfigEmail(req.usuario_id);
+    } catch (err) {
+      return res.status(400).json({ erro: err.message });
+    }
+
     let envio;
     try {
       envio = await enviarEmail(nota.cliente_email, 'Nota fiscal nº ' + nota.numero_nfse, texto, {
         filename: 'nfse-' + nota.numero_nfse + '.pdf',
         content: pdf
-      });
+      }, config);
     } catch (err) {
       console.log('erro ao mandar email:', err.message);
-      return res.status(500).json({ erro: 'Não foi possível enviar o email. Confira a configuração do SMTP.' });
+      return res.status(500).json({ erro: 'Não foi possível enviar o e-mail. Confira a configuração em Configurações > E-mail.' });
     }
 
     await pool.query("UPDATE nota_fiscal SET status = 'enviada' WHERE id = $1 AND usuario_id = $2", [nota.id, req.usuario_id]);

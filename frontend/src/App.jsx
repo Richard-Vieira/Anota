@@ -6,6 +6,7 @@ import NovaNota from './pages/NovaNota.jsx'
 import Notas from './pages/Notas.jsx'
 import Clientes from './pages/Clientes.jsx'
 import Servicos from './pages/Servicos.jsx'
+import Configuracoes from './pages/Configuracoes.jsx'
 import { pegaUsuario, pegaToken, tokenVencido, sair } from './api.js'
 
 // setinha pra baixo do menu do usuario
@@ -108,6 +109,7 @@ function App() {
           <Route path="/notas" element={<Notas />} />
           <Route path="/clientes" element={<Clientes />} />
           <Route path="/servicos" element={<Servicos />} />
+          <Route path="/configuracoes" element={<Configuracoes />} />
           <Route path="*" element={<Navigate to="/nova-nota" />} />
         </Routes>
       </main>

@@ -1,18 +1,38 @@
 -- ANota - script de criacao do banco
 -- rodar primeiro esse e depois o seed.sql
 
+DROP TABLE IF EXISTS config_email;
 DROP TABLE IF EXISTS nota_fiscal;
 DROP TABLE IF EXISTS servico;
 DROP TABLE IF EXISTS cliente;
 DROP TABLE IF EXISTS usuario;
 
--- usuario = o MEI que usa o sistema
+-- usuario = o MEI que usa o sistema (e o prestador que aparece na nota)
 CREATE TABLE usuario (
     id SERIAL PRIMARY KEY,
     nome VARCHAR(100) NOT NULL,
     cnpj VARCHAR(14) NOT NULL UNIQUE,
     email VARCHAR(100) NOT NULL UNIQUE,
-    senha VARCHAR(255) NOT NULL
+    senha VARCHAR(255) NOT NULL,
+    inscricao_municipal VARCHAR(20),
+    telefone VARCHAR(20),
+    cep VARCHAR(8),
+    endereco VARCHAR(150),
+    numero VARCHAR(10),
+    bairro VARCHAR(80),
+    municipio VARCHAR(80),
+    uf CHAR(2),
+    codigo_ibge VARCHAR(7)
+);
+
+-- configuracao do e-mail de cada usuario (a senha fica criptografada com a CRIPTO_CHAVE do .env)
+CREATE TABLE config_email (
+    usuario_id INT PRIMARY KEY REFERENCES usuario(id),
+    smtp_host VARCHAR(100) NOT NULL,
+    smtp_porta INT NOT NULL DEFAULT 587,
+    smtp_usuario VARCHAR(100) NOT NULL,
+    smtp_senha TEXT,
+    nome_remetente VARCHAR(100)
 );
 
 -- clientes do MEI (documento pode ser cpf ou cnpj, so numeros)

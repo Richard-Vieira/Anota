@@ -1,8 +1,9 @@
 -- dados de exemplo pra testar
 -- usuario: marcos@anota.com / senha: 123456 (a senha ta com hash bcrypt)
 
-INSERT INTO usuario (nome, cnpj, email, senha) VALUES
-('Marcos Pereira', '45231876000187', 'marcos@anota.com', '$2a$10$CPFEvnZ9af.O4/XthDc5XOZj8ua.NVLI8EVpogKjmOsw76Rz2qt3q');
+INSERT INTO usuario (nome, cnpj, email, senha, inscricao_municipal, telefone, cep, endereco, numero, bairro, municipio, uf, codigo_ibge) VALUES
+('Marcos Pereira', '45231876000187', 'marcos@anota.com', '$2a$10$CPFEvnZ9af.O4/XthDc5XOZj8ua.NVLI8EVpogKjmOsw76Rz2qt3q',
+ '123456', '(49) 99800-1122', '89801000', 'Avenida Getúlio Dorneles Vargas', '1500', 'Centro', 'Chapecó', 'SC', '4204202');
 
 -- clientes (cpf e cnpj validos, gerei pra teste)
 INSERT INTO cliente (usuario_id, nome, documento, email, telefone) VALUES
