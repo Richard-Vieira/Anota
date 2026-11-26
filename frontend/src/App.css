@@ -1260,6 +1260,92 @@ td.valor-celula {
   padding: 24px 0;
 }
 
+/* codigo de tributacao escolhido no formulario de servico */
+.codigo-escolhido {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border: 1px solid #DCE1DE;
+  border-radius: 8px;
+  background: #F7FAF8;
+}
+
+.codigo-escolhido .codigo {
+  margin-left: 0;
+  background: #FFFFFF;
+}
+
+.codigo-escolhido p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #4F5B56;
+}
+
+.codigo-vazio {
+  padding: 12px 14px;
+  border: 1px dashed #C9D1CD;
+  border-radius: 8px;
+}
+
+/* lista pra escolher outro codigo */
+.troca-codigo {
+  border: 1px solid #DCE1DE;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.lista-codigos {
+  max-height: 280px;
+  overflow-y: auto;
+  margin: 8px 0;
+}
+
+.lista-codigos p {
+  margin: 8px 4px;
+}
+
+.lista-codigos button {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  width: 100%;
+  height: auto;
+  margin: 0;
+  padding: 9px 8px;
+  background: transparent;
+  color: #16201C;
+  border: none;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.lista-codigos button:hover,
+.lista-codigos button.atual {
+  background: #E1F5EE;
+}
+
+.lista-codigos button .codigo {
+  margin: 1px 0 0;
+  flex-shrink: 0;
+  background: #FFFFFF;
+}
+
+.lista-codigos-texto {
+  color: #4F5B56;
+}
+
+.lista-codigos-texto strong {
+  display: block;
+  font-weight: 500;
+  color: #16201C;
+}
+
 /* =============== configuracoes =============== */
 .config-tela {
   max-width: 720px;

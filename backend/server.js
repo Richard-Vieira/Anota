@@ -13,6 +13,7 @@ const { gerarPdf } = require('./pdf');
 const { enviarEmail } = require('./email');
 const cripto = require('./cripto');
 const { consultaCep, consultaCnpj, ErroConsulta } = require('./consultas');
+const tributacao = require('./tributacao');
 
 const app = express();
 app.use(cors());
@@ -151,6 +152,14 @@ app.get('/consulta/cnpj/:cnpj', verificaToken, async (req, res) => {
     if (err instanceof ErroConsulta) return res.status(err.status).json({ erro: err.message });
     trataErro(res, err);
   }
+});
+
+// busca o codigo de tributacao nacional pela descricao do servico (ou pelo comeco do codigo)
+// ex: /consulta/tributacao?q=pintura residencial -> 07.05.01 primeiro
+// a tabela oficial fica no backend (dados/tributacao.json), nao chama API de fora
+app.get('/consulta/tributacao', verificaToken, (req, res) => {
+  const q = String(req.query.q || '').substring(0, 150);
+  res.json(tributacao.buscaCodigos(q, 8));
 });
 
 // valida os campos de endereco que se repetem no prestador e no cliente
@@ -506,17 +515,17 @@ app.get('/servicos', verificaToken, async (req, res) => {
 });
 
 // validacao do servico (usa no post e no put)
-// o codigo de tributacao e so conferido no formato (6 numeros), nao tem a tabela oficial aqui
+// o codigo de tributacao tem que existir na tabela oficial (dados/tributacao.json)
 function validaServico(body) {
-  const { descricao, valor, codigo_tributacao, descricao_codigo, palavras_chave } = body;
+  const { descricao, valor, codigo_tributacao, palavras_chave } = body;
   if (val.vazio(descricao)) return 'A descrição do serviço é obrigatória';
   if (String(descricao).trim().length > 150) return 'A descrição pode ter no máximo 150 letras';
   if (val.vazio(codigo_tributacao)) return 'O código de tributação nacional é obrigatório';
   if (!/^\d{6}$/.test(val.soNumeros(codigo_tributacao))) return 'O código de tributação nacional tem 6 números (00.00.00)';
-  if (!val.vazio(descricao_codigo) && String(descricao_codigo).length > 300) return 'A descrição do código pode ter no máximo 300 letras';
+  if (!tributacao.pegaCodigo(val.soNumeros(codigo_tributacao))) return 'Esse código de tributação não existe na tabela nacional. Escolha um da lista.';
   if (!val.vazio(palavras_chave) && String(palavras_chave).length > 500) return 'Palavras-chave demais (máximo 500 letras)';
-  if (val.vazio(valor)) return 'O valor é obrigatório';
-  if (!val.validarValor(valor)) return 'O valor tem que ser maior que zero';
+  // valor padrao e opcional: se vier, tem que ser maior que zero
+  if (!val.vazio(valor) && !val.validarValor(valor)) return 'O valor tem que ser maior que zero';
   return null;
 }
 
@@ -535,9 +544,10 @@ function arrumaPalavras(txt) {
 function paramsServico(b) {
   return [
     b.descricao.trim(),
-    Number(String(b.valor).replace(',', '.')),
+    val.vazio(b.valor) ? null : Number(String(b.valor).replace(',', '.')),
     val.soNumeros(b.codigo_tributacao),
-    textoOuNull(b.descricao_codigo, 300),
+    // a descricao do codigo sempre vem da tabela oficial (a pessoa nao digita mais)
+    textoOuNull(tributacao.pegaCodigo(val.soNumeros(b.codigo_tributacao)).descricao, 300),
     arrumaPalavras(b.palavras_chave)
   ];
 }

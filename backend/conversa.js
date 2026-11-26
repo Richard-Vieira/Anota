@@ -86,7 +86,8 @@ async function responder(texto, rascunho, clientes, servicos) {
     valor = novo.valor;
   } else if (ant.valor && !ant.valor_do_cadastro) {
     valor = Number(ant.valor);
-  } else if (servico) {
+  } else if (servico && Number(servico.valor) > 0) {
+    // so usa o do cadastro se o servico tiver valor padrao; senao o chat pergunta
     valor = Number(servico.valor);
     valorDoCadastro = true;
   }

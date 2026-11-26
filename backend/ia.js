@@ -376,7 +376,7 @@ async function interpretarComIA(texto, clientes, servicos, aguardando) {
     descricao: s.descricao,
     codigo_tributacao: s.codigo_tributacao,
     palavras_chave: s.palavras_chave || '',
-    valor_padrao: Number(s.valor)
+    valor_padrao: s.valor == null ? null : Number(s.valor)
   }));
 
   let mensagem =

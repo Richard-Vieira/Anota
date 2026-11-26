@@ -31,6 +31,8 @@ function Clientes() {
     carregar()
   }, [])
 
+  const pj = form.tipo == 'PJ'
+
   function campo(nome, valor) {
     setForm({ ...form, [nome]: valor })
   }
@@ -46,22 +48,24 @@ function Clientes() {
   }
 
   // pessoa juridica: busca o nome e o endereco na BrasilAPI (pelo backend)
-  async function buscarCnpj() {
+  // roda sozinho quando o CNPJ fica completo (o botao fica pra buscar de novo)
+  async function buscarCnpj(cnpj) {
     setErro('')
     setMsg('')
-    if (soNumeros(form.documento).length != 14) {
+    if (soNumeros(cnpj).length != 14) {
       setErro('Digite o CNPJ completo (14 números)')
       return
     }
     setBuscandoCnpj(true)
-    const r = await api('/consulta/cnpj/' + soNumeros(form.documento))
+    const r = await api('/consulta/cnpj/' + soNumeros(cnpj))
     setBuscandoCnpj(false)
     if (!r.ok) {
       setErro(r.dados.erro)
       return
     }
     const c = r.dados
-    setForm({
+    // usa o form mais novo (a pessoa pode ter digitado algo enquanto buscava)
+    setForm(form => ({
       ...form,
       nome: c.nome || form.nome,
       email: form.email || c.email,
@@ -73,8 +77,15 @@ function Clientes() {
       municipio: c.municipio || form.municipio,
       uf: c.uf || form.uf,
       codigo_ibge: c.codigo_ibge || form.codigo_ibge
-    })
-    setMsg('Dados da Receita preenchidos. Confira e salve.')
+    }))
+    setMsg('Dados da Receita preenchidos' + (c.situacao ? ' (situação: ' + c.situacao.toLowerCase() + ')' : '') + '. Confira e salve.')
+  }
+
+  function digitouDocumento(valor) {
+    const doc = soNumeros(valor).substring(0, pj ? 14 : 11)
+    const completou = pj && doc.length == 14 && soNumeros(form.documento).length != 14
+    campo('documento', doc)
+    if (completou) buscarCnpj(doc)
   }
 
   async function salvar(e) {
@@ -139,8 +150,6 @@ function Clientes() {
     String(c.municipio || '').toLowerCase().includes(b)
   )
 
-  const pj = form.tipo == 'PJ'
-
   return (
     <div className="duas-colunas lista-e-form">
       <div>
@@ -189,15 +198,15 @@ function Clientes() {
           <div className="campo-largo">
             <input
               value={pj ? mascaraCNPJ(form.documento) : mascaraCPF(form.documento)}
-              onChange={e => campo('documento', soNumeros(e.target.value))}
+              onChange={e => digitouDocumento(e.target.value)}
               placeholder={pj ? '00.000.000/0000-00' : '000.000.000-00'}
               inputMode="numeric"
             />
           </div>
           {pj && (
             <div className="campo-botao">
-              <button type="button" className="secundario" onClick={buscarCnpj} disabled={buscandoCnpj}>
-                {buscandoCnpj ? 'Buscando...' : 'Buscar pelo CNPJ'}
+              <button type="button" className="secundario" onClick={() => buscarCnpj(form.documento)} disabled={buscandoCnpj}>
+                {buscandoCnpj ? 'Buscando...' : 'Buscar de novo'}
               </button>
             </div>
           )}

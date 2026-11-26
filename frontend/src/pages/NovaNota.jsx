@@ -316,8 +316,9 @@ function NovaNota() {
       const s = servicos.find(x => x.id == valor)
       // trocou o servico: se o valor era o do cadastro, usa o do servico novo
       if (s && (!rascunho.valor || rascunho.valor_do_cadastro)) {
-        novo.valor = Number(s.valor)
-        novo.valor_do_cadastro = true
+        // servico sem valor padrao: deixa o valor vazio pra pessoa preencher
+        novo.valor = Number(s.valor) > 0 ? Number(s.valor) : ''
+        novo.valor_do_cadastro = Number(s.valor) > 0
       }
       if (s && (!rascunho.descricao || servicos.some(x => x.descricao == rascunho.descricao))) novo.descricao = s.descricao
     }

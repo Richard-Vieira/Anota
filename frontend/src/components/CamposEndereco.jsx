@@ -9,6 +9,9 @@ import { mascaraCEP, soNumeros } from '../formatos.js'
 function CamposEndereco({ dados, muda }) {
   const [buscando, setBuscando] = useState(false)
   const [aviso, setAviso] = useState('')
+  // o codigo IBGE vem junto com o CEP, entao fica travado
+  // so libera pra digitar se o CEP nao achou ou se a pessoa clicar em corrigir
+  const [ibgeManual, setIbgeManual] = useState(false)
 
   function campo(nome, valor) {
     muda({ ...dados, [nome]: valor })
@@ -26,8 +29,10 @@ function CamposEndereco({ dados, muda }) {
       setBuscando(false)
       if (!r.ok) {
         setAviso(r.dados.erro)
+        setIbgeManual(true)
         return
       }
+      setIbgeManual(false)
       // preenche o que veio e deixa o numero pra pessoa digitar
       muda({
         ...novo,
@@ -39,6 +44,8 @@ function CamposEndereco({ dados, muda }) {
       })
     }
   }
+
+  const travado = !!dados.codigo_ibge && !ibgeManual
 
   return (
     <div>
@@ -78,8 +85,18 @@ function CamposEndereco({ dados, muda }) {
         </div>
       </div>
 
-      <label>Código IBGE do município</label>
-      <input value={dados.codigo_ibge || ''} onChange={e => campo('codigo_ibge', soNumeros(e.target.value).substring(0, 7))} placeholder="7 números (vem junto com o CEP)" inputMode="numeric" />
+      <label>
+        Código IBGE do município
+        {travado && <> <span className="texto-menor">(veio com o CEP · <a href="#" onClick={e => { e.preventDefault(); setIbgeManual(true) }}>corrigir</a>)</span></>}
+      </label>
+      <input
+        value={dados.codigo_ibge || ''}
+        readOnly={travado}
+        className={travado ? 'campo-fixo' : ''}
+        onChange={e => { setIbgeManual(true); campo('codigo_ibge', soNumeros(e.target.value).substring(0, 7)) }}
+        placeholder="Vem sozinho com o CEP"
+        inputMode="numeric"
+      />
     </div>
   )
 }

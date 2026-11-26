@@ -40,22 +40,23 @@ function MeusDados() {
   }
 
   // consulta a BrasilAPI (pelo backend) e preenche o nome e o endereco
-  async function buscarCnpj() {
+  // roda sozinho quando o CNPJ fica completo (o botao fica pra buscar de novo)
+  async function buscarCnpj(cnpj) {
     setErro('')
     setMsg('')
-    if (soNumeros(dados.cnpj).length != 14) {
+    if (soNumeros(cnpj).length != 14) {
       setErro('Digite o CNPJ completo (14 números)')
       return
     }
     setBuscandoCnpj(true)
-    const r = await api('/consulta/cnpj/' + soNumeros(dados.cnpj))
+    const r = await api('/consulta/cnpj/' + soNumeros(cnpj))
     setBuscandoCnpj(false)
     if (!r.ok) {
       setErro(r.dados.erro)
       return
     }
     const c = r.dados
-    setDados({
+    setDados(dados => ({
       ...dados,
       nome: c.nome || dados.nome,
       telefone: dados.telefone || c.telefone,
@@ -66,8 +67,15 @@ function MeusDados() {
       municipio: c.municipio || dados.municipio,
       uf: c.uf || dados.uf,
       codigo_ibge: c.codigo_ibge || dados.codigo_ibge
-    })
+    }))
     setMsg('Dados da Receita preenchidos' + (c.situacao ? ' (situação: ' + c.situacao.toLowerCase() + ')' : '') + '. Confira e salve.')
+  }
+
+  function digitouCnpj(valor) {
+    const cnpj = soNumeros(valor).substring(0, 14)
+    const completou = cnpj.length == 14 && soNumeros(dados.cnpj).length != 14
+    campo('cnpj', cnpj)
+    if (completou) buscarCnpj(cnpj)
   }
 
   async function salvar(e) {
@@ -102,11 +110,11 @@ function MeusDados() {
         <div className="grade-campos">
           <div className="campo-largo">
             <label>CNPJ</label>
-            <input value={mascaraCNPJ(dados.cnpj)} onChange={e => campo('cnpj', soNumeros(e.target.value))} inputMode="numeric" />
+            <input value={mascaraCNPJ(dados.cnpj)} onChange={e => digitouCnpj(e.target.value)} inputMode="numeric" />
           </div>
           <div className="campo-botao">
-            <button type="button" className="secundario" onClick={buscarCnpj} disabled={buscandoCnpj}>
-              {buscandoCnpj ? 'Buscando...' : 'Buscar pelo CNPJ'}
+            <button type="button" className="secundario" onClick={() => buscarCnpj(dados.cnpj)} disabled={buscandoCnpj}>
+              {buscandoCnpj ? 'Buscando...' : 'Buscar de novo'}
             </button>
           </div>
         </div>

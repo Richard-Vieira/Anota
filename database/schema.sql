@@ -61,7 +61,7 @@ CREATE TABLE servico (
     id SERIAL PRIMARY KEY,
     usuario_id INT NOT NULL REFERENCES usuario(id),
     descricao VARCHAR(150) NOT NULL,
-    valor DECIMAL(10,2) NOT NULL,
+    valor DECIMAL(10,2), -- valor padrao (opcional): so entra na nota se a pessoa nao falar o valor
     codigo_tributacao VARCHAR(6) NOT NULL,
     descricao_codigo VARCHAR(300),
     palavras_chave TEXT
