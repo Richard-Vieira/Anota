@@ -6,6 +6,10 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const pool = require('./db');
 const val = require('./validacoes');
+const { gerarToken, verificaToken } = require('./auth');
+const ia = require('./ia');
+const { gerarPdf } = require('./pdf');
+const { enviarEmail } = require('./email');
 
 const app = express();
 app.use(cors());
@@ -23,6 +27,10 @@ function trataErro(res, err) {
   if (err.code === '22P02') {
     return res.status(400).json({ erro: 'Algum campo foi enviado com formato inválido' });
   }
+  // 23505 = valor repetido em coluna UNIQUE (email ou cnpj do usuario)
+  if (err.code === '23505') {
+    return res.status(400).json({ erro: 'Já existe uma conta com esse email ou CNPJ' });
+  }
   return res.status(500).json({ erro: 'Erro no servidor, tente novamente' });
 }
 
@@ -30,7 +38,58 @@ app.get('/', (req, res) => {
   res.send('API do ANota funcionando');
 });
 
-// =============== LOGIN ===============
+// =============== CADASTRO E LOGIN ===============
+// essas duas rotas sao as unicas que nao precisam do token
+app.post('/cadastro', async (req, res) => {
+  const { nome, cnpj, email, senha } = req.body;
+  console.log('novo cadastro', email);
+
+  if (val.vazio(nome)) {
+    return res.status(400).json({ erro: 'Informe seu nome' });
+  }
+  if (val.vazio(cnpj)) {
+    return res.status(400).json({ erro: 'Informe o CNPJ do seu MEI' });
+  }
+  if (!val.validarCNPJ(cnpj)) {
+    return res.status(400).json({ erro: 'CNPJ inválido' });
+  }
+  if (val.vazio(email)) {
+    return res.status(400).json({ erro: 'Informe o email' });
+  }
+  if (!val.validarEmail(email)) {
+    return res.status(400).json({ erro: 'Email inválido' });
+  }
+  if (val.vazio(senha) || String(senha).length < 6) {
+    return res.status(400).json({ erro: 'A senha precisa ter pelo menos 6 caracteres' });
+  }
+
+  try {
+    const emailLimpo = email.trim().toLowerCase();
+    const cnpjLimpo = val.soNumeros(cnpj);
+
+    // ve se ja tem alguem com esse email ou cnpj
+    const existe = await pool.query('SELECT email, cnpj FROM usuario WHERE email = $1 OR cnpj = $2', [emailLimpo, cnpjLimpo]);
+    if (existe.rows.length > 0) {
+      if (existe.rows[0].email == emailLimpo) {
+        return res.status(400).json({ erro: 'Já existe uma conta com esse email' });
+      }
+      return res.status(400).json({ erro: 'Já existe uma conta com esse CNPJ' });
+    }
+
+    // nunca salva a senha pura, so o hash
+    const hash = await bcrypt.hash(String(senha), 10);
+    const resultado = await pool.query(
+      'INSERT INTO usuario (nome, cnpj, email, senha) VALUES ($1, $2, $3, $4) RETURNING id, nome, cnpj, email',
+      [nome.trim(), cnpjLimpo, emailLimpo, hash]
+    );
+    const usuario = resultado.rows[0];
+    // ja devolve o token pra pessoa entrar direto
+    res.status(201).json({ token: gerarToken(usuario), usuario: usuario });
+  } catch (err) {
+    trataErro(res, err);
+  }
+});
+
 app.post('/login', async (req, res) => {
   const { email, senha } = req.body;
   console.log('tentando login', email);
@@ -48,61 +107,57 @@ app.post('/login', async (req, res) => {
       return res.status(400).json({ erro: 'Email ou senha incorretos' });
     }
     const usuario = resultado.rows[0];
-    const ok = await bcrypt.compare(senha, usuario.senha);
+    const ok = await bcrypt.compare(String(senha), usuario.senha);
     if (!ok) {
       return res.status(400).json({ erro: 'Email ou senha incorretos' });
     }
     // nao manda a senha de volta ne
     delete usuario.senha;
-    res.json(usuario);
+    res.json({ token: gerarToken(usuario), usuario: usuario });
   } catch (err) {
     trataErro(res, err);
   }
 });
 
+// daqui pra baixo todas as rotas usam o verificaToken
+// o usuario_id vem do token (req.usuario_id), nao mais da query/body
+
 // =============== CLIENTES ===============
-app.get('/clientes', async (req, res) => {
-  const usuario_id = req.query.usuario_id;
-  if (val.vazio(usuario_id)) {
-    return res.status(400).json({ erro: 'Informe o usuario_id' });
-  }
+app.get('/clientes', verificaToken, async (req, res) => {
   try {
-    const dados = await pool.query('SELECT * FROM cliente WHERE usuario_id = $1 ORDER BY nome', [usuario_id]);
+    const dados = await pool.query('SELECT * FROM cliente WHERE usuario_id = $1 ORDER BY nome', [req.usuario_id]);
     res.json(dados.rows);
   } catch (err) {
     trataErro(res, err);
   }
 });
 
-app.post('/clientes', async (req, res) => {
+// validacao do cliente (era repetida no post e no put, juntei aqui)
+function validaCliente(body) {
+  const { nome, documento, email } = body;
+  if (val.vazio(nome)) return 'O nome do cliente é obrigatório';
+  if (val.vazio(documento)) return 'O CPF ou CNPJ é obrigatório';
+  if (!val.validarDocumento(documento)) return 'CPF ou CNPJ inválido';
+  if (val.vazio(email)) return 'O email é obrigatório';
+  if (!val.validarEmail(email)) return 'Email inválido';
+  return null;
+}
+
+app.post('/clientes', verificaToken, async (req, res) => {
   // pega os dados do form
-  const { usuario_id, nome, documento, email, telefone } = req.body;
+  const { nome, documento, email, telefone } = req.body;
   console.log('novo cliente', req.body);
 
-  if (val.vazio(usuario_id)) {
-    return res.status(400).json({ erro: 'Informe o usuario_id' });
-  }
-  if (val.vazio(nome)) {
-    return res.status(400).json({ erro: 'O nome do cliente é obrigatório' });
-  }
-  if (val.vazio(documento)) {
-    return res.status(400).json({ erro: 'O CPF ou CNPJ é obrigatório' });
-  }
-  if (!val.validarDocumento(documento)) {
-    return res.status(400).json({ erro: 'CPF ou CNPJ inválido' });
-  }
-  if (val.vazio(email)) {
-    return res.status(400).json({ erro: 'O email é obrigatório' });
-  }
-  if (!val.validarEmail(email)) {
-    return res.status(400).json({ erro: 'Email inválido' });
+  const erro = validaCliente(req.body);
+  if (erro) {
+    return res.status(400).json({ erro: erro });
   }
 
   try {
     const doc = val.soNumeros(documento);
     const resultado = await pool.query(
       'INSERT INTO cliente (usuario_id, nome, documento, email, telefone) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [usuario_id, nome.trim(), doc, email.trim(), telefone || null]
+      [req.usuario_id, nome.trim(), doc, email.trim(), telefone || null]
     );
     res.status(201).json(resultado.rows[0]);
   } catch (err) {
@@ -110,34 +165,20 @@ app.post('/clientes', async (req, res) => {
   }
 });
 
-app.put('/clientes/:id', async (req, res) => {
+app.put('/clientes/:id', verificaToken, async (req, res) => {
   const id = req.params.id;
-  const { usuario_id, nome, documento, email, telefone } = req.body;
+  const { nome, documento, email, telefone } = req.body;
 
-  // mesma validacao do post (copiei de la)
-  if (val.vazio(usuario_id)) {
-    return res.status(400).json({ erro: 'Informe o usuario_id' });
-  }
-  if (val.vazio(nome)) {
-    return res.status(400).json({ erro: 'O nome do cliente é obrigatório' });
-  }
-  if (val.vazio(documento)) {
-    return res.status(400).json({ erro: 'O CPF ou CNPJ é obrigatório' });
-  }
-  if (!val.validarDocumento(documento)) {
-    return res.status(400).json({ erro: 'CPF ou CNPJ inválido' });
-  }
-  if (val.vazio(email)) {
-    return res.status(400).json({ erro: 'O email é obrigatório' });
-  }
-  if (!val.validarEmail(email)) {
-    return res.status(400).json({ erro: 'Email inválido' });
+  const erro = validaCliente(req.body);
+  if (erro) {
+    return res.status(400).json({ erro: erro });
   }
 
   try {
+    // o AND usuario_id garante que so altera cliente que e dele
     const res2 = await pool.query(
       'UPDATE cliente SET nome = $1, documento = $2, email = $3, telefone = $4 WHERE id = $5 AND usuario_id = $6 RETURNING *',
-      [nome.trim(), val.soNumeros(documento), email.trim(), telefone || null, id, usuario_id]
+      [nome.trim(), val.soNumeros(documento), email.trim(), telefone || null, id, req.usuario_id]
     );
     if (res2.rows.length == 0) {
       return res.status(404).json({ erro: 'Cliente não encontrado' });
@@ -148,14 +189,10 @@ app.put('/clientes/:id', async (req, res) => {
   }
 });
 
-app.delete('/clientes/:id', async (req, res) => {
+app.delete('/clientes/:id', verificaToken, async (req, res) => {
   const id = req.params.id;
-  const usuario_id = req.query.usuario_id;
-  if (val.vazio(usuario_id)) {
-    return res.status(400).json({ erro: 'Informe o usuario_id' });
-  }
   try {
-    const r = await pool.query('DELETE FROM cliente WHERE id = $1 AND usuario_id = $2 RETURNING id', [id, usuario_id]);
+    const r = await pool.query('DELETE FROM cliente WHERE id = $1 AND usuario_id = $2 RETURNING id', [id, req.usuario_id]);
     if (r.rows.length == 0) {
       return res.status(404).json({ erro: 'Cliente não encontrado' });
     }
@@ -166,25 +203,18 @@ app.delete('/clientes/:id', async (req, res) => {
 });
 
 // =============== SERVICOS ===============
-app.get('/servicos', async (req, res) => {
-  const usuario_id = req.query.usuario_id;
-  if (val.vazio(usuario_id)) {
-    return res.status(400).json({ erro: 'Informe o usuario_id' });
-  }
+app.get('/servicos', verificaToken, async (req, res) => {
   try {
-    const dados = await pool.query('SELECT * FROM servico WHERE usuario_id = $1 ORDER BY descricao', [usuario_id]);
+    const dados = await pool.query('SELECT * FROM servico WHERE usuario_id = $1 ORDER BY descricao', [req.usuario_id]);
     res.json(dados.rows);
   } catch (err) {
     trataErro(res, err);
   }
 });
 
-app.post('/servicos', async (req, res) => {
-  const { usuario_id, descricao, valor } = req.body;
+app.post('/servicos', verificaToken, async (req, res) => {
+  const { descricao, valor } = req.body;
 
-  if (val.vazio(usuario_id)) {
-    return res.status(400).json({ erro: 'Informe o usuario_id' });
-  }
   if (val.vazio(descricao)) {
     return res.status(400).json({ erro: 'A descrição do serviço é obrigatória' });
   }
@@ -199,7 +229,7 @@ app.post('/servicos', async (req, res) => {
     const v = Number(String(valor).replace(',', '.'));
     const resultado = await pool.query(
       'INSERT INTO servico (usuario_id, descricao, valor) VALUES ($1, $2, $3) RETURNING *',
-      [usuario_id, descricao.trim(), v]
+      [req.usuario_id, descricao.trim(), v]
     );
     res.status(201).json(resultado.rows[0]);
   } catch (err) {
@@ -207,13 +237,10 @@ app.post('/servicos', async (req, res) => {
   }
 });
 
-app.put('/servicos/:id', async (req, res) => {
+app.put('/servicos/:id', verificaToken, async (req, res) => {
   const id = req.params.id;
-  const { usuario_id, descricao, valor } = req.body;
+  const { descricao, valor } = req.body;
 
-  if (val.vazio(usuario_id)) {
-    return res.status(400).json({ erro: 'Informe o usuario_id' });
-  }
   if (val.vazio(descricao)) {
     return res.status(400).json({ erro: 'A descrição do serviço é obrigatória' });
   }
@@ -228,7 +255,7 @@ app.put('/servicos/:id', async (req, res) => {
     const v = Number(String(valor).replace(',', '.'));
     const res2 = await pool.query(
       'UPDATE servico SET descricao = $1, valor = $2 WHERE id = $3 AND usuario_id = $4 RETURNING *',
-      [descricao.trim(), v, id, usuario_id]
+      [descricao.trim(), v, id, req.usuario_id]
     );
     if (res2.rows.length == 0) {
       return res.status(404).json({ erro: 'Serviço não encontrado' });
@@ -239,14 +266,10 @@ app.put('/servicos/:id', async (req, res) => {
   }
 });
 
-app.delete('/servicos/:id', async (req, res) => {
+app.delete('/servicos/:id', verificaToken, async (req, res) => {
   const id = req.params.id;
-  const usuario_id = req.query.usuario_id;
-  if (val.vazio(usuario_id)) {
-    return res.status(400).json({ erro: 'Informe o usuario_id' });
-  }
   try {
-    const r = await pool.query('DELETE FROM servico WHERE id = $1 AND usuario_id = $2 RETURNING id', [id, usuario_id]);
+    const r = await pool.query('DELETE FROM servico WHERE id = $1 AND usuario_id = $2 RETURNING id', [id, req.usuario_id]);
     if (r.rows.length == 0) {
       return res.status(404).json({ erro: 'Serviço não encontrado' });
     }
@@ -257,34 +280,30 @@ app.delete('/servicos/:id', async (req, res) => {
 });
 
 // =============== NOTAS ===============
-app.get('/notas', async (req, res) => {
-  const usuario_id = req.query.usuario_id;
-  if (val.vazio(usuario_id)) {
-    return res.status(400).json({ erro: 'Informe o usuario_id' });
-  }
+// select das notas com o nome do cliente e do servico (uso em mais de um lugar)
+// to_char pq senao a data vem com fuso e muda o dia
+const SQL_NOTAS = `SELECT n.id, n.descricao, n.valor, to_char(n.data_emissao, 'YYYY-MM-DD') AS data_emissao, n.status,
+                          n.numero_nfse, n.cliente_id, c.nome AS cliente_nome, c.email AS cliente_email,
+                          c.telefone AS cliente_telefone, n.servico_id, s.descricao AS servico_descricao
+                   FROM nota_fiscal n
+                   JOIN cliente c ON c.id = n.cliente_id
+                   JOIN servico s ON s.id = n.servico_id
+                   WHERE n.usuario_id = $1`;
+
+app.get('/notas', verificaToken, async (req, res) => {
   try {
-    // to_char pq senao a data vem com fuso e muda o dia
-    const sql = `SELECT n.id, n.descricao, n.valor, to_char(n.data_emissao, 'YYYY-MM-DD') AS data_emissao, n.status,
-                        n.cliente_id, c.nome AS cliente_nome, n.servico_id, s.descricao AS servico_descricao
-                 FROM nota_fiscal n
-                 JOIN cliente c ON c.id = n.cliente_id
-                 JOIN servico s ON s.id = n.servico_id
-                 WHERE n.usuario_id = $1
-                 ORDER BY n.data_emissao DESC, n.id DESC`;
-    const dados = await pool.query(sql, [usuario_id]);
+    const dados = await pool.query(SQL_NOTAS + ' ORDER BY n.data_emissao DESC, n.id DESC', [req.usuario_id]);
     res.json(dados.rows);
   } catch (err) {
     trataErro(res, err);
   }
 });
 
-app.post('/notas', async (req, res) => {
-  const { usuario_id, cliente_id, servico_id, descricao, valor } = req.body;
+app.post('/notas', verificaToken, async (req, res) => {
+  const { cliente_id, servico_id, descricao, valor } = req.body;
+  const usuario_id = req.usuario_id;
   console.log('criando nota', req.body);
 
-  if (val.vazio(usuario_id)) {
-    return res.status(400).json({ erro: 'Informe o usuario_id' });
-  }
   if (val.vazio(cliente_id)) {
     return res.status(400).json({ erro: 'Escolha o cliente' });
   }
@@ -325,133 +344,26 @@ app.post('/notas', async (req, res) => {
   }
 });
 
-// tira acento e deixa minusculo pra comparar os textos
-function normaliza(txt) {
-  return String(txt || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '');
-}
-
-// ajustado com IA para melhorar o codigo
-// tenta achar o valor no texto, tipo "500 reais", "R$ 1.200,50", "350 conto"
-function achaValor(texto) {
-  var m = texto.match(/r\$\s*([\d.,]+)/);
-  if (!m) {
-    m = texto.match(/([\d.,]+)\s*(reais|real|conto|pila)/);
-  }
-  if (!m) return null;
-
-  var numero = m[1];
-  // "1.200,50" -> 1200.50
-  if (numero.indexOf(',') >= 0) {
-    numero = numero.replace(/\./g, '').replace(',', '.');
-  } else if (/\.\d{3}$/.test(numero)) {
-    // "1.200" e mil e duzentos, nao 1 virgula 2
-    numero = numero.replace(/\./g, '');
-  }
-  var v = parseFloat(numero);
-  if (isNaN(v) || v <= 0) return null;
-  return v;
-}
-
 // POST /notas/interpretar
-// recebe o texto que a pessoa falou (por enquanto digitado, simulando a transcricao do audio)
-// TODO: aqui depois vai entrar a IA de verdade (transcrever o audio e entender o texto)
-// por enquanto e so uma busca simples de palavras
-app.post('/notas/interpretar', async (req, res) => {
-  const { usuario_id, texto } = req.body;
+// recebe o texto que a pessoa falou (o front transcreve o audio com o reconhecimento de voz do navegador)
+// a IA tenta entender cliente, servico e valor. Se nao tiver IA configurada usa a busca de palavras (ia.js)
+app.post('/notas/interpretar', verificaToken, async (req, res) => {
+  const { texto } = req.body;
   console.log('texto recebido:', texto);
 
-  if (val.vazio(usuario_id)) {
-    return res.status(400).json({ erro: 'Informe o usuario_id' });
-  }
   if (val.vazio(texto)) {
-    return res.status(400).json({ erro: 'Escreva o que você disse' });
+    return res.status(400).json({ erro: 'Escreva ou fale o que você fez' });
+  }
+  if (String(texto).length > 1000) {
+    return res.status(400).json({ erro: 'Texto muito grande, fale só o cliente, o serviço e o valor' });
   }
 
   try {
-    const clientes = await pool.query('SELECT * FROM cliente WHERE usuario_id = $1', [usuario_id]);
-    const servicos = await pool.query('SELECT * FROM servico WHERE usuario_id = $1', [usuario_id]);
-    const t = normaliza(texto);
+    const clientes = await pool.query('SELECT * FROM cliente WHERE usuario_id = $1', [req.usuario_id]);
+    const servicos = await pool.query('SELECT * FROM servico WHERE usuario_id = $1', [req.usuario_id]);
 
-    // procura o cliente: nome completo vale mais que so o primeiro nome
-    let clienteAchado = null;
-    let melhorPonto = 0;
-    for (let i = 0; i < clientes.rows.length; i++) {
-      const c = clientes.rows[i];
-      const nome = normaliza(c.nome);
-      const primeiroNome = nome.split(' ')[0];
-      let pontos = 0;
-      if (t.includes(nome)) {
-        pontos = 10;
-      } else if (primeiroNome.length >= 3 && new RegExp('\\b' + primeiroNome + '\\b').test(t)) {
-        pontos = 5;
-        // se tiver mais partes do nome soma mais
-        const partes = nome.split(' ');
-        for (let j = 1; j < partes.length; j++) {
-          if (partes[j].length >= 3 && t.includes(partes[j])) pontos++;
-        }
-      }
-      if (pontos > melhorPonto) {
-        melhorPonto = pontos;
-        clienteAchado = c;
-      }
-    }
-
-    // procura o servico: ve se as palavras da descricao aparecem no texto
-    // usa so o comeco da palavra pra pegar "pintei" -> "pintura", "rebocar" -> "reboco"
-    const ignorar = ['de', 'da', 'do', 'e', 'em', 'com', 'para', 'pequenos', 'servico'];
-    let servicoAchado = null;
-    let melhor = 0;
-    for (const s of servicos.rows) {
-      const desc = normaliza(s.descricao);
-      let pontos = 0;
-      if (t.includes(desc)) {
-        pontos = 100;
-      } else {
-        const palavras = desc.split(/\s+/);
-        for (const p of palavras) {
-          if (p.length < 4 || ignorar.includes(p)) continue;
-          const pedaco = p.substring(0, 4);
-          if (t.includes(pedaco)) pontos++;
-        }
-      }
-      if (pontos > melhor) {
-        melhor = pontos;
-        servicoAchado = s;
-      }
-    }
-
-    let valor = achaValor(t);
-    let valorDoCadastro = false;
-    // se a pessoa nao falou o valor usa o valor cadastrado do servico
-    if (valor == null && servicoAchado) {
-      valor = Number(servicoAchado.valor);
-      valorDoCadastro = true;
-    }
-
-    const faltando = [];
-    if (!clienteAchado) faltando.push('cliente');
-    if (!servicoAchado) faltando.push('servico');
-    if (valor == null) faltando.push('valor');
-
-    // monta uma descricao pra nota
-    let descricao = '';
-    if (servicoAchado) {
-      descricao = servicoAchado.descricao;
-      if (clienteAchado) descricao += ' - ' + clienteAchado.nome;
-    }
-
-    const resposta = {
-      cliente: clienteAchado,
-      servico: servicoAchado,
-      valor: valor,
-      valor_do_cadastro: valorDoCadastro,
-      descricao: descricao,
-      faltando: faltando
-    };
-    console.log('resultado da interpretacao', resposta);
+    const resposta = await ia.interpretar(String(texto), clientes.rows, servicos.rows);
+    console.log('resultado da interpretacao (' + resposta.origem + ')', resposta);
     res.json(resposta);
   } catch (err) {
     trataErro(res, err);
@@ -459,38 +371,46 @@ app.post('/notas/interpretar', async (req, res) => {
 });
 
 // POST /notas/:id/emitir
-// SIMULADO: gera um numero aleatorio e muda o status pra emitida
-// TODO: depois aqui vai chamar a API do governo (NFS-e nacional)
-app.post('/notas/:id/emitir', async (req, res) => {
+// SIMULADO: nao manda nada pro governo, so gera o proximo numero e muda o status pra emitida
+// pra emitir de verdade no Sistema Nacional da NFS-e precisa:
+//  - certificado digital A1 do MEI (pra assinar o XML da DPS)
+//  - credenciamento no ambiente de Producao Restrita (o ambiente de testes do governo)
+// TODO: trocar essa simulacao pela chamada real quando tiver o certificado
+app.post('/notas/:id/emitir', verificaToken, async (req, res) => {
   const id = req.params.id;
-  const usuario_id = req.body.usuario_id;
-
-  if (val.vazio(usuario_id)) {
-    return res.status(400).json({ erro: 'Informe o usuario_id' });
-  }
+  const usuario_id = req.usuario_id;
 
   try {
     const nota = await pool.query('SELECT * FROM nota_fiscal WHERE id = $1 AND usuario_id = $2', [id, usuario_id]);
     if (nota.rows.length == 0) {
       return res.status(404).json({ erro: 'Nota não encontrada' });
     }
-    if (nota.rows[0].status == 'emitida') {
-      return res.status(400).json({ erro: 'Essa nota já foi emitida' });
-    } else if (nota.rows[0].status == 'cancelada') {
+    if (nota.rows[0].status == 'cancelada') {
       return res.status(400).json({ erro: 'Essa nota está cancelada' });
+    } else if (nota.rows[0].status != 'pendente' || nota.rows[0].numero_nfse) {
+      return res.status(400).json({ erro: 'Essa nota já foi emitida' });
     }
 
-    // simula o tempo de resposta da api
-    // await new Promise(r => setTimeout(r, 1000));
+    // proximo numero da sequencia desse usuario (salvo com 6 digitos: 000001, 000002...)
+    const ultimo = await pool.query('SELECT MAX(numero_nfse) AS ultimo FROM nota_fiscal WHERE usuario_id = $1', [usuario_id]);
+    const numero = String(Number(ultimo.rows[0].ultimo || 0) + 1).padStart(6, '0');
 
-    const numero = Math.floor(100000 + Math.random() * 900000);
-    // TODO: salvar o numero da nota no banco (precisa criar uma coluna)
-    await pool.query("UPDATE nota_fiscal SET status = 'emitida', data_emissao = CURRENT_DATE WHERE id = $1", [id]);
+    // o "AND status = 'pendente'" e pra nao emitir duas vezes se clicar 2x rapido
+    const r = await pool.query(
+      `UPDATE nota_fiscal SET status = 'emitida', data_emissao = CURRENT_DATE, numero_nfse = $1
+       WHERE id = $2 AND usuario_id = $3 AND status = 'pendente' AND numero_nfse IS NULL
+       RETURNING id, numero_nfse, status, to_char(data_emissao, 'YYYY-MM-DD') AS data_emissao`,
+      [numero, id, usuario_id]
+    );
+    if (r.rows.length == 0) {
+      return res.status(400).json({ erro: 'Essa nota já foi emitida' });
+    }
 
     res.json({
       mensagem: 'Nota emitida com sucesso (simulação)',
       id: Number(id),
-      numero: numero,
+      numero: r.rows[0].numero_nfse,
+      data_emissao: r.rows[0].data_emissao,
       status: 'emitida'
     });
   } catch (err) {
@@ -498,14 +418,93 @@ app.post('/notas/:id/emitir', async (req, res) => {
   }
 });
 
-// =============== FATURAMENTO ===============
-// so conta as notas emitidas
-app.get('/faturamento', async (req, res) => {
-  const usuario_id = req.query.usuario_id;
-  let ano = req.query.ano;
-  if (val.vazio(usuario_id)) {
-    return res.status(400).json({ erro: 'Informe o usuario_id' });
+// busca a nota com tudo que precisa pro PDF e pro email (prestador, cliente e servico)
+async function buscaNotaCompleta(id, usuario_id) {
+  const r = await pool.query(
+    `SELECT n.id, n.descricao, n.valor, to_char(n.data_emissao, 'YYYY-MM-DD') AS data_emissao, n.status, n.numero_nfse,
+            u.nome AS prestador_nome, u.cnpj AS prestador_cnpj, u.email AS prestador_email,
+            c.nome AS cliente_nome, c.documento AS cliente_documento, c.email AS cliente_email, c.telefone AS cliente_telefone,
+            s.descricao AS servico_descricao
+     FROM nota_fiscal n
+     JOIN usuario u ON u.id = n.usuario_id
+     JOIN cliente c ON c.id = n.cliente_id
+     JOIN servico s ON s.id = n.servico_id
+     WHERE n.id = $1 AND n.usuario_id = $2`,
+    [id, usuario_id]
+  );
+  return r.rows[0];
+}
+
+// GET /notas/:id/pdf - baixa o PDF da nota
+app.get('/notas/:id/pdf', verificaToken, async (req, res) => {
+  try {
+    const nota = await buscaNotaCompleta(req.params.id, req.usuario_id);
+    if (!nota) {
+      return res.status(404).json({ erro: 'Nota não encontrada' });
+    }
+    if (!nota.numero_nfse) {
+      return res.status(400).json({ erro: 'Emita a nota antes de gerar o PDF' });
+    }
+
+    const pdf = await gerarPdf(nota);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="nfse-' + nota.numero_nfse + '.pdf"');
+    res.send(pdf);
+  } catch (err) {
+    trataErro(res, err);
   }
+});
+
+// POST /notas/:id/enviar-email - manda o PDF pro email do cliente
+app.post('/notas/:id/enviar-email', verificaToken, async (req, res) => {
+  try {
+    const nota = await buscaNotaCompleta(req.params.id, req.usuario_id);
+    if (!nota) {
+      return res.status(404).json({ erro: 'Nota não encontrada' });
+    }
+    if (nota.status != 'emitida' && nota.status != 'enviada') {
+      return res.status(400).json({ erro: 'Só dá pra enviar nota emitida' });
+    }
+    if (val.vazio(nota.cliente_email)) {
+      return res.status(400).json({ erro: 'Esse cliente não tem email cadastrado' });
+    }
+
+    const pdf = await gerarPdf(nota);
+    const valor = Number(nota.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    const texto =
+      'Olá, ' + nota.cliente_nome + '!\n\n' +
+      'Segue em anexo a nota fiscal de serviço nº ' + nota.numero_nfse + ', ' +
+      'referente a "' + nota.descricao + '", no valor de ' + valor + '.\n\n' +
+      'Obrigado pela preferência!\n' + nota.prestador_nome;
+
+    let envio;
+    try {
+      envio = await enviarEmail(nota.cliente_email, 'Nota fiscal nº ' + nota.numero_nfse, texto, {
+        filename: 'nfse-' + nota.numero_nfse + '.pdf',
+        content: pdf
+      });
+    } catch (err) {
+      console.log('erro ao mandar email:', err.message);
+      return res.status(500).json({ erro: 'Não foi possível enviar o email. Confira a configuração do SMTP.' });
+    }
+
+    await pool.query("UPDATE nota_fiscal SET status = 'enviada' WHERE id = $1 AND usuario_id = $2", [nota.id, req.usuario_id]);
+
+    res.json({
+      mensagem: 'Email enviado para ' + nota.cliente_email,
+      status: 'enviada',
+      teste: envio.teste,
+      link: envio.link // so vem quando e conta de teste (Ethereal)
+    });
+  } catch (err) {
+    trataErro(res, err);
+  }
+});
+
+// =============== FATURAMENTO ===============
+// conta as notas emitidas e as enviadas (enviada = emitida e ja mandada pro cliente)
+app.get('/faturamento', verificaToken, async (req, res) => {
+  let ano = req.query.ano;
   if (val.vazio(ano)) {
     ano = new Date().getFullYear();
   }
@@ -513,14 +512,14 @@ app.get('/faturamento', async (req, res) => {
   try {
     const total = await pool.query(
       `SELECT COALESCE(SUM(valor), 0) AS total FROM nota_fiscal
-       WHERE usuario_id = $1 AND status = 'emitida' AND EXTRACT(YEAR FROM data_emissao) = $2`,
-      [usuario_id, ano]
+       WHERE usuario_id = $1 AND status IN ('emitida', 'enviada') AND EXTRACT(YEAR FROM data_emissao) = $2`,
+      [req.usuario_id, ano]
     );
     const porMes = await pool.query(
       `SELECT EXTRACT(MONTH FROM data_emissao) AS mes, SUM(valor) AS total FROM nota_fiscal
-       WHERE usuario_id = $1 AND status = 'emitida' AND EXTRACT(YEAR FROM data_emissao) = $2
+       WHERE usuario_id = $1 AND status IN ('emitida', 'enviada') AND EXTRACT(YEAR FROM data_emissao) = $2
        GROUP BY mes ORDER BY mes`,
-      [usuario_id, ano]
+      [req.usuario_id, ano]
     );
 
     // monta os 12 meses, os que nao tem nota ficam 0
@@ -542,6 +541,27 @@ app.get('/faturamento', async (req, res) => {
   }
 });
 
+// POST /faturamento/perguntar - pergunta em texto, tipo "quanto faturei em outubro?"
+app.post('/faturamento/perguntar', verificaToken, async (req, res) => {
+  const { pergunta } = req.body;
+  console.log('pergunta do faturamento:', pergunta);
+
+  if (val.vazio(pergunta)) {
+    return res.status(400).json({ erro: 'Escreva sua pergunta' });
+  }
+  if (String(pergunta).length > 300) {
+    return res.status(400).json({ erro: 'Pergunta muito grande' });
+  }
+
+  try {
+    const notas = await pool.query(SQL_NOTAS + ' ORDER BY n.data_emissao', [req.usuario_id]);
+    const resposta = await ia.responderFaturamento(String(pergunta), notas.rows);
+    res.json(resposta);
+  } catch (err) {
+    trataErro(res, err);
+  }
+});
+
 // app.get('/teste', (req, res) => {
 //   res.json({ ok: true });
 // });
@@ -549,4 +569,5 @@ app.get('/faturamento', async (req, res) => {
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log('servidor rodando na porta ' + PORT);
+  console.log(ia.temChave() ? 'IA: usando a API do Claude' : 'IA: sem IA_API_KEY, usando a interpretacao simulada');
 });

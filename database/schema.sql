@@ -10,7 +10,7 @@ DROP TABLE IF EXISTS usuario;
 CREATE TABLE usuario (
     id SERIAL PRIMARY KEY,
     nome VARCHAR(100) NOT NULL,
-    cnpj VARCHAR(14) NOT NULL,
+    cnpj VARCHAR(14) NOT NULL UNIQUE,
     email VARCHAR(100) NOT NULL UNIQUE,
     senha VARCHAR(255) NOT NULL
 );
@@ -34,7 +34,8 @@ CREATE TABLE servico (
 );
 
 -- notas fiscais
--- status: pendente, emitida ou cancelada
+-- status: pendente, emitida, enviada (mandou pro cliente) ou cancelada
+-- numero_nfse: numero que volta quando emite (etapa 3)
 CREATE TABLE nota_fiscal (
     id SERIAL PRIMARY KEY,
     usuario_id INT NOT NULL REFERENCES usuario(id),
@@ -43,5 +44,6 @@ CREATE TABLE nota_fiscal (
     descricao TEXT,
     valor DECIMAL(10,2) NOT NULL,
     data_emissao DATE,
-    status VARCHAR(20) DEFAULT 'pendente'
+    status VARCHAR(20) DEFAULT 'pendente',
+    numero_nfse VARCHAR(20)
 );
