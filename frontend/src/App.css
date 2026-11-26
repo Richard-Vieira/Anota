@@ -413,50 +413,317 @@ button.largo {
   margin-bottom: 8px;
 }
 
-/* =============== nova nota =============== */
-.gravar {
-  display: flex;
-  align-items: center;
-  gap: 20px;
+/* =============== nova nota (chat) =============== */
+/* na tela do chat a barra de escrever fica colada embaixo, entao tira o espaco de baixo */
+.conteudo.conteudo-chat {
+  padding-bottom: 0;
 }
 
-.botao-microfone {
-  width: 96px;
-  height: 96px;
-  min-width: 96px;
+.chat {
+  max-width: 760px;
+  margin: 0 auto;
+  min-height: calc(100vh - 69px - 40px);
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-topo {
+  display: flex;
+  justify-content: flex-end;
+  margin: -16px 0 8px;
+}
+
+.chat-mensagens {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-bottom: 24px;
+}
+
+/* quando rola pro fim, deixa espaco pra barra de escrever nao tapar a ultima mensagem */
+.chat-fim {
+  scroll-margin-bottom: 140px;
+}
+
+/* tela vazia: saudacao e exemplos */
+.chat-vazio {
+  margin: auto 0;
+  padding: 40px 0;
+}
+
+.chat-vazio h1 {
+  font-size: 34px;
+  margin-bottom: 10px;
+}
+
+.exemplos {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 28px 0 20px;
+}
+
+.exemplos button {
+  height: auto;
   margin: 0;
-  padding: 0;
+  padding: 14px 18px;
+  text-align: left;
+  background: #FFFFFF;
+  color: #16201C;
+  border: 1px solid #DCE1DE;
+  border-radius: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.exemplos button:hover {
+  background: #F3F6F4;
+  border-color: #C9D1CD;
+}
+
+/* balao do usuario (direita) */
+.balao-eu {
+  align-self: flex-end;
+  max-width: 80%;
+  background: #F3F6F4;
+  border-radius: 18px 18px 4px 18px;
+  padding: 10px 16px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* balao do ANota (esquerda, com a bolinha verde) */
+.balao-anota {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.avatar-anota {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
   border-radius: 50%;
+  background: #0F6E56;
+  color: #FFFFFF;
+  font-family: 'Bricolage Grotesque', 'Inter', sans-serif;
+  font-weight: 600;
+  font-size: 15px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.botao-microfone.gravando {
-  background: #A32D2D;
+.balao-anota-conteudo {
+  flex: 1;
+  min-width: 0;
+  padding-top: 4px;
+}
+
+.balao-anota-conteudo .botoes button {
+  margin-top: 14px;
+}
+
+.fala {
+  margin: 0 0 4px;
+  line-height: 1.55;
+}
+
+.balao-anota-conteudo .papel + .origem + .fala {
+  margin-top: 14px;
+}
+
+.balao-anota-conteudo .erro {
+  margin: 0;
+}
+
+/* "interpretado por IA" pequenininho embaixo da previa */
+.origem {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #8A9590;
+}
+
+.montando {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #5A6560;
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #DCE1DE;
+  border-top-color: #0F6E56;
+  border-radius: 50%;
+  animation: girar 0.8s linear infinite;
+}
+
+@keyframes girar {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* respostas prontas (clientes ou servicos pra escolher) */
+.sugestoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.sugestoes button {
+  height: 34px;
+  margin: 0;
+  padding: 0 14px;
+  background: #E1F5EE;
+  color: #085041;
+  border: 1px solid #E1F5EE;
+  border-radius: 17px;
+  font-size: 14px;
+}
+
+.sugestoes button:hover {
+  background: #CDEDE1;
+  border-color: #CDEDE1;
+}
+
+.card-cadastro,
+.editar-dados {
+  margin-top: 14px;
+  border: 1px solid #DCE1DE;
+  border-radius: 12px;
+  padding: 4px 18px 18px;
+}
+
+.nota-emitida .botoes button {
+  height: 40px;
+}
+
+/* barra de escrever (fica presa embaixo) */
+.chat-barra {
+  position: sticky;
+  bottom: 0;
+  background: #FFFFFF;
+  padding: 8px 0 14px;
+}
+
+.chat-caixa {
+  border: 1px solid #C9D1CD;
+  border-radius: 16px;
+  padding: 10px 10px 10px 16px;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  background: #FFFFFF;
+  box-shadow: 0 2px 12px rgba(22, 32, 28, 0.06);
+}
+
+.chat-caixa:focus-within {
+  border-color: #0F6E56;
+}
+
+.chat-caixa.gravando {
   border-color: #A32D2D;
 }
 
-.gravar strong {
-  display: block;
-  font-size: 18px;
-  font-weight: 500;
-  margin-bottom: 4px;
+.chat-caixa textarea {
+  flex: 1;
+  border: none;
+  padding: 8px 0;
+  resize: none;
+  font-size: 16px;
+  line-height: 1.5;
+  max-height: 200px;
+  min-height: 40px;
+  background: transparent;
 }
 
-.texto-falado {
-  font-size: 22px;
-  line-height: 1.6;
+.chat-caixa textarea:focus {
+  border: none;
+}
+
+.chat-botoes {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.botao-mic {
+  width: 42px;
+  height: 42px;
+  margin: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: #FFFFFF;
+  color: #16201C;
+  border: 1px solid #C9D1CD;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.botao-mic:hover {
+  background: #F3F6F4;
+  border-color: #9AA7A1;
+}
+
+/* gravando: vermelho pulsando */
+.botao-mic.gravando {
+  background: #A32D2D;
+  border-color: #A32D2D;
+  color: #FFFFFF;
+  animation: pulsar 1.4s ease-out infinite;
+}
+
+@keyframes pulsar {
+  0% {
+    box-shadow: 0 0 0 0 rgba(163, 45, 45, 0.45);
+  }
+  100% {
+    box-shadow: 0 0 0 12px rgba(163, 45, 45, 0);
+  }
+}
+
+.botao-gerar {
+  height: 42px;
+  margin: 0;
+  padding: 0 18px;
+  border-radius: 21px;
+}
+
+.ouvindo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #A32D2D;
+  margin-bottom: 8px;
+}
+
+.ponto-vermelho {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #A32D2D;
+  animation: piscar 1s ease-in-out infinite;
+}
+
+@keyframes piscar {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.chat-rodape {
   margin: 8px 0 0;
-}
-
-.texto-falado .chip {
-  font-size: 20px;
-  padding: 0 8px;
-}
-
-.textarea-falado {
-  font-size: 18px;
+  font-size: 12px;
+  color: #8A9590;
+  text-align: center;
 }
 
 /* o "papel" da nota na previa */
@@ -512,25 +779,6 @@ button.largo {
 .campo-faltando {
   border-color: #F0D49A;
   background: #FFFDF6;
-}
-
-.checks {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 20px;
-  margin-top: 20px;
-  font-size: 14px;
-  color: #4F5B56;
-}
-
-.checks label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  color: #16201C;
-  cursor: pointer;
 }
 
 .botoes {
@@ -968,10 +1216,11 @@ td.valor-celula {
     flex-direction: column;
     align-items: stretch;
   }
-  .botao-microfone {
-    width: 80px;
-    height: 80px;
-    min-width: 80px;
+  .chat-vazio h1 {
+    font-size: 28px;
+  }
+  .botao-gerar {
+    padding: 0 14px;
   }
   .lista-acoes {
     flex-direction: column;

@@ -1,100 +1,176 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { api, formataDinheiro } from '../api.js'
+import { api, baixarArquivo, formataDinheiro, pegaUsuario } from '../api.js'
+import { mascaraCodigo, mascaraDocumento, mascaraTelefone, soNumeros } from '../formatos.js'
 
 // reconhecimento de voz do proprio navegador (Web Speech API)
 // no Chrome e no Edge funciona, no Firefox nao tem
 const Reconhecimento = window.SpeechRecognition || window.webkitSpeechRecognition
 
-// tira acento e deixa minusculo pra comparar palavras
-function normaliza(txt) {
-  return String(txt || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9$]/g, '')
+// frases de exemplo da tela vazia (clicar coloca no campo)
+const EXEMPLOS = [
+  'Fiz a pintura da casa da Joana, ficou 1.500 reais',
+  'Assentei o piso da Construtora Oeste, quatro mil e duzentos reais',
+  'Troquei a torneira do Carlos, cobrei 250 reais'
+]
+
+// cada mensagem do chat precisa de um id pro React
+let contador = 0
+function novoId() {
+  contador++
+  return Date.now() + '-' + contador
 }
 
-// ajustado com IA para melhorar o codigo
-// pinta de verde no texto falado as palavras que viraram cliente, servico e valor
-// (servico compara so o comeco da palavra: "pintei" bate com "pintura")
-function destacaTexto(texto, cliente, servico) {
-  const nomeCliente = cliente ? cliente.nome.split(' ').map(normaliza).filter(p => p.length >= 3) : []
-  const nomeServico = servico ? servico.descricao.split(' ').map(normaliza).filter(p => p.length >= 4) : []
-  const palavras = texto.split(' ')
-  const pedacos = [] // { texto, marcado }
-
-  for (let i = 0; i < palavras.length; i++) {
-    const p = normaliza(palavras[i])
-    const anterior = i > 0 ? normaliza(palavras[i - 1]) : ''
-    let marcado = false
-    if (nomeCliente.includes(p)) marcado = true
-    if (p.length >= 4 && nomeServico.some(s => s.substring(0, 4) == p.substring(0, 4))) marcado = true
-    if (/\d/.test(p) || p == 'r$') marcado = true
-    if (['reais', 'real', 'conto', 'pila'].includes(p) && /\d/.test(anterior)) marcado = true
-
-    // junta palavras marcadas seguidas num chip so ("Joana Silva")
-    const ultimo = pedacos[pedacos.length - 1]
-    if (ultimo && ultimo.marcado == marcado) {
-      ultimo.texto += ' ' + palavras[i]
-    } else {
-      pedacos.push({ texto: (ultimo ? ' ' : '') + palavras[i], marcado })
-    }
-  }
-
-  return pedacos.map((p, i) => {
-    if (!p.marcado) return <span key={i}>{p.texto}</span>
-    // a virgula/ponto do final fica fora do chip
-    const partes = p.texto.trim().match(/^(.*?)([.,!?;:]*)$/)
-    return <span key={i}>{p.texto.startsWith(' ') ? ' ' : ''}<span className="chip">{partes[1]}</span>{partes[2]}</span>
-  })
+function espera(ms) {
+  return new Promise(r => setTimeout(r, ms))
 }
 
-// icone do microfone (svg branco)
+// icones (svg)
 function IconeMicrofone() {
   return (
-    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="9" y="2" width="6" height="12" rx="3" />
       <path d="M5 10a7 7 0 0 0 14 0" />
       <line x1="12" y1="17" x2="12" y2="21" />
-      <line x1="8" y1="21" x2="16" y2="21" />
     </svg>
   )
 }
 
+// so os campos que a api precisa pra continuar a mesma nota
+function paraApi(r) {
+  if (!r) return null
+  return {
+    cliente_id: r.cliente_id || null,
+    servico_id: r.servico_id || null,
+    valor: r.valor || null,
+    valor_do_cadastro: r.valor_do_cadastro,
+    descricao: r.descricao,
+    cliente_nome_falado: r.cliente_nome_falado,
+    documento: r.documento,
+    aguardando: r.aguardando,
+    origem: r.origem
+  }
+}
+
+// o que ainda falta pra poder emitir
+function oQueFalta(r) {
+  const f = []
+  if (!r.cliente_id) f.push('cliente')
+  if (!r.servico_id) f.push('serviço')
+  if (!r.valor || Number(r.valor) <= 0) f.push('valor')
+  if (!String(r.descricao || '').trim()) f.push('descrição')
+  return f
+}
+
+// previa da nota (a do padrao oficial vem no proximo passo)
+function Previa({ r, clientes, servicos }) {
+  const cli = clientes.find(c => c.id == r.cliente_id)
+  const serv = servicos.find(s => s.id == r.servico_id)
+  const falta = <span className="falta">Falta informar</span>
+  return (
+    <div className="papel">
+      <div className="papel-linha"><span>Cliente</span><span>{cli ? cli.nome : r.cliente_nome_falado ? <>{r.cliente_nome_falado} {falta}</> : falta}</span></div>
+      <div className="papel-linha"><span>CPF/CNPJ</span><span>{cli ? mascaraDocumento(cli.documento) : falta}</span></div>
+      <div className="papel-linha"><span>Serviço</span><span>{serv ? serv.descricao + ' (' + mascaraCodigo(serv.codigo_tributacao) + ')' : falta}</span></div>
+      <div className="papel-linha"><span>Descrição</span><span>{r.descricao ? r.descricao : falta}</span></div>
+      <div className="papel-valor">
+        <span>Valor</span>
+        {r.valor ? <span className="valor-destaque">{formataDinheiro(r.valor)}</span> : falta}
+      </div>
+    </div>
+  )
+}
+
+// card pra cadastrar o cliente ali mesmo no chat
+// fica fora do NovaNota pra nao perder o que foi digitado quando a tela atualiza
+function CardCadastro({ nome, documento, ocupado, cadastrar, naoCadastrar }) {
+  const [dados, setDados] = useState({ nome: nome, documento: documento, email: '', telefone: '' })
+  return (
+    <div className="card-cadastro">
+      <div className="grade-campos">
+        <div className="campo-largo">
+          <label>Nome</label>
+          <input value={dados.nome} onChange={e => setDados({ ...dados, nome: e.target.value })} />
+        </div>
+        <div className="campo-largo">
+          <label>{soNumeros(dados.documento).length > 11 ? 'CNPJ' : 'CPF'}</label>
+          <input value={mascaraDocumento(dados.documento)} onChange={e => setDados({ ...dados, documento: soNumeros(e.target.value) })} />
+        </div>
+      </div>
+      <div className="grade-campos">
+        <div className="campo-largo">
+          <label>E-mail <span className="texto-menor">(opcional)</span></label>
+          <input type="email" value={dados.email} onChange={e => setDados({ ...dados, email: e.target.value })} />
+        </div>
+        <div className="campo-largo">
+          <label>Telefone <span className="texto-menor">(opcional)</span></label>
+          <input value={mascaraTelefone(dados.telefone)} onChange={e => setDados({ ...dados, telefone: mascaraTelefone(e.target.value) })} />
+        </div>
+      </div>
+      <div className="botoes">
+        <button type="button" onClick={() => cadastrar(dados)} disabled={ocupado}>Cadastrar cliente</button>
+        <button type="button" className="secundario" onClick={naoCadastrar} disabled={ocupado}>Não, é outro cliente</button>
+      </div>
+    </div>
+  )
+}
+
 function NovaNota() {
+  const [mensagens, setMensagens] = useState([])
+  const [rascunho, setRascunho] = useState(null) // a nota que a conversa esta montando
   const [texto, setTexto] = useState('')
-  const [previa, setPrevia] = useState(null)
+  const [gravando, setGravando] = useState(false)
+  const [ocupado, setOcupado] = useState(false)
+  const [erroMic, setErroMic] = useState('')
+  const [editando, setEditando] = useState(false)
   const [clientes, setClientes] = useState([])
   const [servicos, setServicos] = useState([])
-  const [erro, setErro] = useState('')
-  const [msg, setMsg] = useState('')
-  const [carregando, setCarregando] = useState(false)
-  const [gravando, setGravando] = useState(false)
   const reconhecimento = useRef(null)
-  const [editandoDados, setEditandoDados] = useState(false)
-  const [enviarEmail, setEnviarEmail] = useState(false)
-  const [enviarZap, setEnviarZap] = useState(false)
-  const [linkZap, setLinkZap] = useState('')
+  const campoTexto = useRef(null)
+  const fimDoChat = useRef(null)
+  const usuario = pegaUsuario()
 
-  // campos da previa (da pra mudar antes de emitir)
-  const [clienteId, setClienteId] = useState('')
-  const [servicoId, setServicoId] = useState('')
-  const [valor, setValor] = useState('')
-  const [descricao, setDescricao] = useState('')
+  async function carregarListas() {
+    const r1 = await api('/clientes')
+    if (r1.ok) setClientes(r1.dados)
+    const r2 = await api('/servicos')
+    if (r2.ok) setServicos(r2.dados)
+  }
 
-  // carrega clientes e servicos pros selects
   useEffect(() => {
-    api('/clientes').then(r => { if (r.ok) setClientes(r.dados) })
-    api('/servicos').then(r => { if (r.ok) setServicos(r.dados) })
-
+    carregarListas()
     // se sair da tela gravando, para o microfone
     return () => {
       if (reconhecimento.current) reconhecimento.current.abort()
     }
   }, [])
 
+  // sempre que chega mensagem nova rola pro fim
+  useEffect(() => {
+    if (fimDoChat.current) fimDoChat.current.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [mensagens, editando])
+
+  // o campo de texto cresce conforme escreve (ate um limite)
+  useEffect(() => {
+    const c = campoTexto.current
+    if (!c) return
+    c.style.height = 'auto'
+    c.style.height = Math.min(c.scrollHeight, 200) + 'px'
+  }, [texto])
+
+  function adiciona(msg) {
+    setMensagens(m => [...m, { id: novoId(), ...msg }])
+  }
+
+  function trocaMensagem(id, novo) {
+    setMensagens(m => m.map(x => (x.id == id ? { ...x, ...novo } : x)))
+  }
+
   // ajustado com IA para melhorar o codigo
   // liga/desliga o microfone. O navegador vai transformando a fala em texto
-  // e o texto vai aparecendo no campo "O que você disse" (da pra corrigir depois)
+  // e o texto vai aparecendo no campo enquanto a pessoa fala (da pra corrigir antes de mandar)
   function microfone() {
-    setErro('')
+    setErroMic('')
     if (!Reconhecimento) return
 
     if (gravando) {
@@ -120,13 +196,13 @@ function NovaNota() {
     rec.onerror = (evento) => {
       console.log('erro no microfone', evento.error)
       if (evento.error == 'not-allowed' || evento.error == 'service-not-allowed') {
-        setErro('O navegador não deixou usar o microfone. Libere a permissão ou digite o texto.')
+        setErroMic('O navegador não deixou usar o microfone. Libere a permissão ou digite o texto.')
       } else if (evento.error == 'no-speech') {
-        setErro('Não ouvi nada. Tente de novo falando mais perto do microfone.')
+        setErroMic('Não ouvi nada. Tente de novo falando mais perto do microfone.')
       } else if (evento.error == 'network') {
-        setErro('O reconhecimento de voz precisa de internet. Você pode digitar o texto.')
+        setErroMic('O reconhecimento de voz precisa de internet. Você pode digitar o texto.')
       } else if (evento.error != 'aborted') {
-        setErro('Não consegui gravar (' + evento.error + '). Você pode digitar o texto.')
+        setErroMic('Não consegui gravar (' + evento.error + '). Você pode digitar o texto.')
       }
     }
     rec.onend = () => setGravando(false)
@@ -136,267 +212,383 @@ function NovaNota() {
     setGravando(true)
   }
 
-  async function interpretar() {
-    setErro('')
-    setMsg('')
-    setPrevia(null)
-    if (gravando) reconhecimento.current.stop()
-    if (texto.trim() == '') {
-      setErro('Fale ou escreva o que você fez')
+  // manda o texto pra api junto com o rascunho e troca o "Montando a sua nota..." pela previa
+  async function processar(textoEnviado, base) {
+    const idCarregando = novoId()
+    setMensagens(m => [...m, { id: idCarregando, de: 'anota', tipo: 'carregando' }])
+    setOcupado(true)
+    const inicio = Date.now()
+    const r = await api('/notas/interpretar', { method: 'POST', body: { texto: textoEnviado, rascunho: paraApi(base) } })
+    // deixa o spinner aparecer um pouquinho mesmo quando a resposta e muito rapida
+    if (Date.now() - inicio < 600) await espera(600 - (Date.now() - inicio))
+    setOcupado(false)
+
+    if (!r.ok) {
+      trocaMensagem(idCarregando, { tipo: 'texto', erro: true, texto: r.dados.erro })
       return
     }
-    setCarregando(true)
-    const r = await api('/notas/interpretar', { method: 'POST', body: { texto } })
-    console.log('interpretou', r.dados)
-    if (!r.ok) {
-      setErro(r.dados.erro)
-    } else {
-      const d = r.dados
-      setPrevia(d)
-      setEditandoDados(false)
-      setClienteId(d.cliente ? d.cliente.id : '')
-      setServicoId(d.servico ? d.servico.id : '')
-      setValor(d.valor ? d.valor : '')
-      setDescricao(d.descricao)
+    const d = r.dados
+    const novo = {
+      id: base ? base.id : novoId(),
+      cliente_id: d.cliente ? d.cliente.id : '',
+      servico_id: d.servico ? d.servico.id : '',
+      valor: d.valor || '',
+      valor_do_cadastro: d.valor_do_cadastro,
+      descricao: d.descricao || '',
+      cliente_nome_falado: d.cliente_nome_falado,
+      documento: d.documento,
+      aguardando: d.aguardando,
+      acao: d.acao,
+      pergunta: d.pergunta,
+      sugestoes: d.sugestoes || [],
+      origem: d.origem
     }
-    setCarregando(false)
+    setRascunho(novo)
+    setEditando(false)
+    // a previa antiga dessa nota vira so o historico da pergunta, a nova aparece embaixo
+    setMensagens(m => m.map(x => {
+      if (x.tipo == 'previa' && x.rascunhoId == novo.id && x.status == 'ativa') return { ...x, status: 'antiga' }
+      if (x.id == idCarregando) return { id: x.id, de: 'anota', tipo: 'previa', rascunhoId: novo.id, status: 'ativa', foto: novo }
+      return x
+    }))
   }
 
-  // quando escolhe o servico na mao e ainda nao tem valor, usa o valor cadastrado
-  function escolheServico(id) {
-    setServicoId(id)
-    const s = servicos.find(x => x.id == id)
-    if (s && valor == '') setValor(Number(s.valor))
-    if (s && descricao == '') setDescricao(s.descricao)
+  function enviar(t) {
+    const txt = (t != null ? t : texto).trim()
+    if (txt == '' || ocupado) return
+    if (gravando) reconhecimento.current.stop()
+    setTexto('')
+    adiciona({ de: 'eu', texto: txt })
+
+    // o ANota ofereceu cadastrar o cliente e a pessoa respondeu "sim"
+    if (rascunho && rascunho.acao == 'cadastrar_cliente' && /^(sim|pode|quero|ok|cadastra|cadastre|cadastrar|claro|isso)\b/i.test(txt)) {
+      cadastrarCliente({ nome: rascunho.cliente_nome_falado, documento: rascunho.documento, email: '', telefone: '' })
+      return
+    }
+    processar(txt, rascunho)
   }
 
-  // o que ainda falta (vai sumindo conforme a pessoa preenche)
-  const faltando = []
-  if (clienteId == '') faltando.push('cliente')
-  if (servicoId == '') faltando.push('serviço')
-  if (valor == '' || Number(valor) <= 0) faltando.push('valor')
-  if (descricao.trim() == '') faltando.push('descrição')
+  // Enter manda, Shift+Enter pula linha (igual chat)
+  function teclou(e) {
+    if (e.key == 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      enviar()
+    }
+  }
+
+  // cadastra o cliente que nao existia e continua a mesma nota
+  async function cadastrarCliente(dados) {
+    setOcupado(true)
+    const r = await api('/clientes', { method: 'POST', body: dados })
+    setOcupado(false)
+    if (!r.ok) {
+      adiciona({ de: 'anota', tipo: 'texto', erro: true, texto: r.dados.erro })
+      return
+    }
+    await carregarListas()
+    adiciona({ de: 'anota', tipo: 'texto', texto: 'Pronto, cadastrei ' + r.dados.nome + ' nos seus clientes.' })
+    await processar('', { ...rascunho, cliente_id: r.dados.id, cliente_nome_falado: '', documento: '', aguardando: '', acao: '' })
+  }
+
+  function naoCadastrar() {
+    const novo = { ...rascunho, cliente_nome_falado: '', documento: '', aguardando: 'cliente', acao: '', pergunta: '', sugestoes: [] }
+    setRascunho(novo)
+    adiciona({ de: 'anota', tipo: 'texto', texto: 'Tudo bem. Para qual cliente foi o serviço?' })
+  }
+
+  // mudou algum campo no "Editar dados"
+  function mudaRascunho(campo, valor) {
+    const novo = { ...rascunho, [campo]: valor, pergunta: '', aguardando: '', acao: '', sugestoes: [] }
+    if (campo == 'servico_id') {
+      const s = servicos.find(x => x.id == valor)
+      // trocou o servico: se o valor era o do cadastro, usa o do servico novo
+      if (s && (!rascunho.valor || rascunho.valor_do_cadastro)) {
+        novo.valor = Number(s.valor)
+        novo.valor_do_cadastro = true
+      }
+      if (s && (!rascunho.descricao || servicos.some(x => x.descricao == rascunho.descricao))) novo.descricao = s.descricao
+    }
+    if (campo == 'valor') novo.valor_do_cadastro = false
+    if (campo == 'cliente_id') {
+      novo.cliente_nome_falado = ''
+      novo.documento = ''
+    }
+    setRascunho(novo)
+  }
 
   async function emitir() {
-    setErro('')
-    if (faltando.length > 0) {
-      setErro('Preencha antes de emitir: ' + faltando.join(', '))
-      return
-    }
-    setCarregando(true)
+    const falta = oQueFalta(rascunho)
+    if (falta.length > 0) return
+    setOcupado(true)
 
     // primeiro salva a nota
     const r1 = await api('/notas', {
       method: 'POST',
-      body: { cliente_id: clienteId, servico_id: servicoId, descricao: descricao, valor: valor }
+      body: { cliente_id: rascunho.cliente_id, servico_id: rascunho.servico_id, descricao: rascunho.descricao, valor: rascunho.valor }
     })
     if (!r1.ok) {
-      setErro(r1.dados.erro)
-      setCarregando(false)
+      setOcupado(false)
+      adiciona({ de: 'anota', tipo: 'texto', erro: true, texto: r1.dados.erro })
       return
     }
 
     // depois manda emitir (simulado)
     const r2 = await api('/notas/' + r1.dados.id + '/emitir', { method: 'POST' })
+    setOcupado(false)
     if (!r2.ok) {
-      setErro(r2.dados.erro + ' (a nota ficou pendente na tela Notas)')
-    } else {
-      let mensagem = 'Nota nº ' + r2.dados.numero + ' emitida! Valor: ' + formataDinheiro(valor) + '.'
-
-      // se marcou "Enviar por e-mail" usa a mesma rota do botao da tela Notas
-      if (enviarEmail) {
-        const r3 = await api('/notas/' + r1.dados.id + '/enviar-email', { method: 'POST' })
-        mensagem += r3.ok ? ' ' + r3.dados.mensagem : ' Não consegui enviar o e-mail: ' + r3.dados.erro
-      }
-
-      // WhatsApp: monta o mesmo link wa.me da tela Notas (abre quando clicar no link)
-      setLinkZap('')
-      const cli = clientes.find(c => c.id == clienteId)
-      let tel = String((cli && cli.telefone) || '').replace(/\D/g, '')
-      if (enviarZap && tel == '') {
-        mensagem += ' O cliente não tem telefone cadastrado para o WhatsApp.'
-      } else if (enviarZap) {
-        if (!(tel.startsWith('55') && tel.length >= 12)) tel = '55' + tel
-        const txt = 'Olá, ' + cli.nome + '! Segue a nota fiscal de serviço nº ' + r2.dados.numero +
-          ' referente a "' + descricao + '", no valor de ' + formataDinheiro(valor) + '. Obrigado!'
-        setLinkZap('https://wa.me/' + tel + '?text=' + encodeURIComponent(txt))
-      }
-
-      setMsg(mensagem)
-      setPrevia(null)
-      setEditandoDados(false)
-      setTexto('')
+      adiciona({ de: 'anota', tipo: 'texto', erro: true, texto: r2.dados.erro + ' (a nota ficou pendente na tela Notas)' })
+      return
     }
-    setCarregando(false)
+
+    const cli = clientes.find(c => c.id == rascunho.cliente_id)
+    const final = { ...rascunho, pergunta: '', acao: '' }
+    setMensagens(m => [
+      ...m.map(x => (x.tipo == 'previa' && x.rascunhoId == rascunho.id && x.status == 'ativa' ? { ...x, status: 'emitida', foto: final } : x)),
+      {
+        id: novoId(),
+        de: 'anota',
+        tipo: 'emitida',
+        nota: {
+          id: r1.dados.id,
+          numero: r2.dados.numero,
+          cliente_nome: cli ? cli.nome : '',
+          cliente_email: cli ? cli.email : '',
+          cliente_telefone: cli ? cli.telefone : '',
+          descricao: rascunho.descricao,
+          valor: rascunho.valor
+        }
+      }
+    ])
+    setRascunho(null)
+    setEditando(false)
   }
 
-  const clienteEscolhido = clientes.find(c => c.id == clienteId)
-  const servicoEscolhido = servicos.find(x => x.id == servicoId)
-  const hoje = new Date().toLocaleDateString('pt-BR')
+  // ===== botoes da nota emitida =====
+  async function baixarPdf(msg) {
+    trocaMensagem(msg.id, { aviso: null })
+    const problema = await baixarArquivo('/notas/' + msg.nota.id + '/pdf', 'nfse-' + msg.nota.numero + '.pdf')
+    if (problema) trocaMensagem(msg.id, { aviso: { erro: true, texto: problema } })
+  }
 
-  // os campos de editar (aparecem na caixa amarela quando falta algo, ou no "Editar dados")
-  function campo(nome) {
-    if (nome == 'cliente') {
-      return (
-        <div key="cliente">
-          <label>Cliente</label>
-          <select className={faltando.includes('cliente') ? 'campo-faltando' : ''} value={clienteId} onChange={e => setClienteId(e.target.value)}>
-            <option value="">-- selecione --</option>
-            {clientes.map(c => (
-              <option key={c.id} value={c.id}>{c.nome}</option>
-            ))}
-          </select>
-          {clientes.length == 0 && <small>Você ainda não tem clientes. <Link to="/clientes">Cadastre aqui</Link>.</small>}
-        </div>
-      )
+  async function enviarEmail(msg) {
+    if (!msg.nota.cliente_email) {
+      trocaMensagem(msg.id, { aviso: { erro: true, texto: 'Esse cliente não tem e-mail cadastrado.' } })
+      return
     }
-    if (nome == 'serviço') {
-      return (
-        <div key="servico">
-          <label>Serviço</label>
-          <select className={faltando.includes('serviço') ? 'campo-faltando' : ''} value={servicoId} onChange={e => escolheServico(e.target.value)}>
-            <option value="">-- selecione --</option>
-            {servicos.map(s => (
-              <option key={s.id} value={s.id}>{s.descricao}</option>
-            ))}
-          </select>
-        </div>
-      )
+    trocaMensagem(msg.id, { aviso: { texto: 'Enviando...' } })
+    const r = await api('/notas/' + msg.nota.id + '/enviar-email', { method: 'POST' })
+    if (r.ok) {
+      trocaMensagem(msg.id, { aviso: { texto: r.dados.mensagem + '.', link: r.dados.link } })
+    } else {
+      trocaMensagem(msg.id, { aviso: { erro: true, texto: r.dados.erro } })
     }
-    if (nome == 'valor') {
-      return (
-        <div key="valor">
-          <label>Valor (R$)</label>
-          <input className={faltando.includes('valor') ? 'campo-faltando' : ''} type="number" step="0.01" min="0" value={valor} onChange={e => setValor(e.target.value)} />
-        </div>
-      )
+  }
+
+  function whatsapp(msg) {
+    const n = msg.nota
+    let tel = soNumeros(n.cliente_telefone)
+    if (tel == '') {
+      trocaMensagem(msg.id, { aviso: { erro: true, texto: 'Esse cliente não tem telefone cadastrado.' } })
+      return
     }
+    // o wa.me precisa do codigo do pais (55 = Brasil)
+    if (!(tel.startsWith('55') && tel.length >= 12)) tel = '55' + tel
+    const txt = 'Olá, ' + n.cliente_nome + '! Segue a nota fiscal de serviço nº ' + n.numero +
+      ' referente a "' + n.descricao + '", no valor de ' + formataDinheiro(n.valor) + '. Obrigado!'
+    window.open('https://wa.me/' + tel + '?text=' + encodeURIComponent(txt), '_blank')
+  }
+
+  function novaConversa() {
+    if (gravando) reconhecimento.current.stop()
+    setMensagens([])
+    setRascunho(null)
+    setEditando(false)
+    setTexto('')
+    setErroMic('')
+  }
+
+  // ===== partes da tela =====
+
+  // campos do "Editar dados" (chama como funcao, nao como <Componente />, pra nao perder o foco do input)
+  function camposEditar() {
     return (
-      <div key="descricao">
-        <label>Descrição</label>
-        <input className={faltando.includes('descrição') ? 'campo-faltando' : ''} type="text" value={descricao} onChange={e => setDescricao(e.target.value)} />
+      <div className="editar-dados">
+        <label>Cliente</label>
+        <select value={rascunho.cliente_id} onChange={e => mudaRascunho('cliente_id', e.target.value)}>
+          <option value="">-- selecione --</option>
+          {clientes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+        </select>
+        <label>Serviço</label>
+        <select value={rascunho.servico_id} onChange={e => mudaRascunho('servico_id', e.target.value)}>
+          <option value="">-- selecione --</option>
+          {servicos.map(s => <option key={s.id} value={s.id}>{s.descricao}</option>)}
+        </select>
+        <div className="grade-campos">
+          <div className="campo-largo">
+            <label>Descrição do serviço</label>
+            <input value={rascunho.descricao} onChange={e => mudaRascunho('descricao', e.target.value)} />
+          </div>
+          <div style={{ width: 160 }}>
+            <label>Valor (R$)</label>
+            <input type="number" step="0.01" min="0" value={rascunho.valor} onChange={e => mudaRascunho('valor', e.target.value)} />
+          </div>
+        </div>
       </div>
     )
   }
 
-  const falta = <span className="falta">Falta informar</span>
+  function mostraMensagem(msg) {
+    if (msg.de == 'eu') {
+      return <div key={msg.id} className="balao-eu">{msg.texto}</div>
+    }
+
+    let conteudo = null
+    if (msg.tipo == 'carregando') {
+      conteudo = <div className="montando"><span className="spinner" /> Montando a sua nota...</div>
+    } else if (msg.tipo == 'texto') {
+      conteudo = <p className={msg.erro ? 'erro' : 'fala'}>{msg.texto}</p>
+    } else if (msg.tipo == 'previa' && msg.status == 'antiga') {
+      // historico: so a pergunta que foi feita
+      conteudo = msg.foto.pergunta
+        ? <p className="fala">{msg.foto.pergunta}</p>
+        : <p className="texto-menor">Prévia atualizada mais abaixo.</p>
+    } else if (msg.tipo == 'previa' && msg.status == 'emitida') {
+      conteudo = <Previa r={msg.foto} clientes={clientes} servicos={servicos} />
+    } else if (msg.tipo == 'previa' && !rascunho) {
+      conteudo = <Previa r={msg.foto} clientes={clientes} servicos={servicos} />
+    } else if (msg.tipo == 'previa') {
+      const r = rascunho
+      const falta = oQueFalta(r)
+      conteudo = (
+        <>
+          <Previa r={r} clientes={clientes} servicos={servicos} />
+          <p className="origem">
+            {r.origem == 'ia' ? 'interpretado por IA' : 'interpretação simulada'}
+            {r.valor_do_cadastro && r.valor ? ' · valor padrão do serviço' : ''}
+          </p>
+
+          {r.pergunta && <p className="fala">{r.pergunta}</p>}
+          {r.sugestoes && r.sugestoes.length > 0 && (
+            <div className="sugestoes">
+              {r.sugestoes.map(s => <button key={s} type="button" onClick={() => enviar(s)} disabled={ocupado}>{s}</button>)}
+            </div>
+          )}
+          {r.acao == 'cadastrar_cliente' && (
+            <CardCadastro
+              nome={r.cliente_nome_falado}
+              documento={r.documento}
+              ocupado={ocupado}
+              cadastrar={cadastrarCliente}
+              naoCadastrar={naoCadastrar}
+            />
+          )}
+
+          {editando && camposEditar()}
+          {!r.pergunta && falta.length > 0 && <p className="fala">Falta informar: {falta.join(', ')}. Use o "Editar dados" ou me diga aqui embaixo.</p>}
+          {r.acao != 'cadastrar_cliente' && (
+            <div className="botoes">
+              <button type="button" onClick={emitir} disabled={ocupado || falta.length > 0}>Emitir nota</button>
+              <button type="button" className="secundario" onClick={() => setEditando(!editando)}>
+                {editando ? 'Fechar edição' : 'Editar dados'}
+              </button>
+            </div>
+          )}
+        </>
+      )
+    } else if (msg.tipo == 'emitida') {
+      const n = msg.nota
+      conteudo = (
+        <div className="nota-emitida">
+          <p className="fala"><strong>Nota nº {n.numero} emitida</strong> para {n.cliente_nome}, no valor de {formataDinheiro(n.valor)}.</p>
+          <div className="botoes">
+            <button type="button" className="secundario" onClick={() => baixarPdf(msg)}>Baixar PDF</button>
+            <button type="button" className="secundario" onClick={() => enviarEmail(msg)}>Enviar por e-mail</button>
+            <button type="button" className="secundario" onClick={() => whatsapp(msg)}>WhatsApp</button>
+          </div>
+          {msg.aviso && (
+            <p className={msg.aviso.erro ? 'erro' : 'sucesso'}>
+              {msg.aviso.texto}
+              {msg.aviso.link && <> Foi para uma caixa de teste: <a href={msg.aviso.link} target="_blank">ver o e-mail</a></>}
+            </p>
+          )}
+        </div>
+      )
+    }
+
+    return (
+      <div key={msg.id} className="balao-anota">
+        <span className="avatar-anota">A</span>
+        <div className="balao-anota-conteudo">{conteudo}</div>
+      </div>
+    )
+  }
+
+  const primeiroNome = usuario && usuario.nome ? usuario.nome.split(' ')[0] : ''
 
   return (
-    <div className="duas-colunas">
-      {/* ============ esquerda: gravar e o texto ============ */}
-      <div>
-        <div className="gravar">
-          <button
-            type="button"
-            className={'botao-microfone' + (gravando ? ' gravando' : '')}
-            onClick={microfone}
-            disabled={!Reconhecimento || carregando}
-            title={gravando ? 'Parar de gravar' : 'Gravar áudio'}
-          >
-            <IconeMicrofone />
-          </button>
-          <div>
-            <strong>{gravando ? 'Ouvindo... toque de novo para parar' : (texto != '' ? 'Áudio recebido' : 'Toque para gravar')}</strong>
-            <span className="texto-menor">Diga para quem fez o serviço, o que fez e quanto cobrou.</span>
-          </div>
+    <div className="chat">
+      {mensagens.length > 0 && (
+        <div className="chat-topo">
+          <button type="button" className="pequeno" onClick={novaConversa}>+ Nova conversa</button>
         </div>
+      )}
 
-        {!Reconhecimento && (
-          <p className="aviso">
-            Seu navegador não tem reconhecimento de voz (funciona no Chrome e no Edge). Pode digitar normalmente abaixo.
-          </p>
-        )}
-
-        <h2 style={{ marginTop: 40, marginBottom: 8 }}>O que você disse</h2>
-        {previa ? (
-          <>
-            <p className="texto-falado">{destacaTexto(texto, clienteEscolhido, servicoEscolhido)}</p>
-            <button className="pequeno" style={{ marginTop: 8, marginLeft: -12 }} onClick={() => setPrevia(null)}>Corrigir o texto</button>
-          </>
-        ) : (
-          <>
-            <textarea
-              className="textarea-falado"
-              rows="4"
-              value={texto}
-              onChange={e => setTexto(e.target.value)}
-              placeholder="Ex.: Fiz a pintura da casa da Joana Silva, ficou 1.500 reais"
-            />
-            <button onClick={interpretar} disabled={carregando}>
-              {carregando ? 'Aguarde...' : 'Gerar prévia'}
-            </button>
-          </>
-        )}
-
-        {/* caixa amarela: o que a IA nao entendeu */}
-        {previa && faltando.length > 0 && !editandoDados && (
-          <div className="aviso">
-            <strong style={{ fontWeight: 500 }}>{previa.pergunta || 'Falta informar: ' + faltando.join(', ')}</strong>
-            {faltando.map(f => campo(f))}
+      <div className="chat-mensagens">
+        {mensagens.length == 0 && (
+          <div className="chat-vazio">
+            <h1>Olá, {primeiroNome}! O que você fez hoje?</h1>
+            <p className="texto-menor">
+              Conte para quem foi o serviço, o que você fez e quanto cobrou. Pode falar no microfone ou digitar.
+            </p>
+            <div className="exemplos">
+              {EXEMPLOS.map(ex => (
+                <button key={ex} type="button" onClick={() => { setTexto(ex); campoTexto.current && campoTexto.current.focus() }}>
+                  "{ex}"
+                </button>
+              ))}
+            </div>
+            {(clientes.length == 0 || servicos.length == 0) && (
+              <p className="texto-menor">
+                Dica: cadastre seus <Link to="/servicos">serviços</Link> com as palavras-chave para o ANota reconhecer melhor.
+              </p>
+            )}
           </div>
         )}
-
-        {erro && <p className="erro">{erro}</p>}
-        {msg && (
-          <p className="sucesso">
-            {msg}{' '}
-            {linkZap && <><a href={linkZap} target="_blank">Abrir o WhatsApp</a>. </>}
-            <Link to="/notas">Ir para Notas</Link> para baixar o PDF.
-          </p>
-        )}
+        {mensagens.map(mostraMensagem)}
+        <div ref={fimDoChat} className="chat-fim" />
       </div>
 
-      {/* ============ direita: previa da nota ============ */}
-      <div className="painel">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-          <h2 style={{ margin: 0 }}>Prévia da nota</h2>
-          {previa && (
-            <span className={'chip' + (previa.origem == 'ia' ? '' : ' cinza')}>
-              {previa.origem == 'ia' ? 'entendido pela IA' : 'interpretação simulada'}
-            </span>
-          )}
-        </div>
-
-        <div className="papel">
-          <div className="papel-linha"><span>Cliente</span><span>{!previa ? '—' : clienteEscolhido ? clienteEscolhido.nome : falta}</span></div>
-          <div className="papel-linha"><span>CPF/CNPJ</span><span>{!previa ? '—' : clienteEscolhido ? clienteEscolhido.documento : falta}</span></div>
-          <div className="papel-linha"><span>Serviço</span><span>{!previa ? '—' : servicoEscolhido ? servicoEscolhido.descricao : falta}</span></div>
-          <div className="papel-linha"><span>Descrição</span><span>{!previa ? '—' : descricao.trim() != '' ? descricao : falta}</span></div>
-          <div className="papel-linha"><span>Data</span><span>{hoje}</span></div>
-          <div className="papel-valor">
-            <span>Valor</span>
-            {previa && faltando.includes('valor')
-              ? falta
-              : <span className="valor-destaque" style={{ color: '#16201C' }}>{formataDinheiro(previa ? valor : 0)}</span>}
+      <div className="chat-barra">
+        {gravando && <div className="ouvindo"><span className="ponto-vermelho" /> Ouvindo... clique no microfone para parar</div>}
+        {erroMic && <p className="erro" style={{ margin: '0 0 8px' }}>{erroMic}</p>}
+        <div className={'chat-caixa' + (gravando ? ' gravando' : '')}>
+          <textarea
+            ref={campoTexto}
+            rows="1"
+            value={texto}
+            onChange={e => setTexto(e.target.value)}
+            onKeyDown={teclou}
+            placeholder={rascunho && rascunho.pergunta ? 'Responda aqui...' : 'Ex.: Fiz a pintura da casa da Joana, ficou 1.500 reais'}
+          />
+          <div className="chat-botoes">
+            <button
+              type="button"
+              className={'botao-mic' + (gravando ? ' gravando' : '')}
+              onClick={microfone}
+              disabled={!Reconhecimento}
+              title={!Reconhecimento ? 'Seu navegador não tem reconhecimento de voz (use Chrome ou Edge)' : gravando ? 'Parar de gravar' : 'Falar'}
+            >
+              <IconeMicrofone />
+            </button>
+            <button type="button" className="botao-gerar" onClick={() => enviar()} disabled={ocupado || texto.trim() == ''}>
+              Gerar prévia
+            </button>
           </div>
-          {previa && previa.valor_do_cadastro && (
-            <p className="texto-menor" style={{ margin: '8px 0 0' }}>Você não falou o valor, usei o valor cadastrado do serviço.</p>
-          )}
         </div>
-
-        {!previa && <p className="texto-menor">A prévia aparece aqui depois que você falar o serviço.</p>}
-
-        {previa && editandoDados && (
-          <div>{['cliente', 'serviço', 'valor', 'descrição'].map(f => campo(f))}</div>
-        )}
-
-        {previa && (
-          <>
-            <div className="checks">
-              <span>Enviar ao cliente por:</span>
-              <label><input type="checkbox" checked={enviarEmail} onChange={e => setEnviarEmail(e.target.checked)} /> E-mail</label>
-              <label><input type="checkbox" checked={enviarZap} onChange={e => setEnviarZap(e.target.checked)} /> WhatsApp</label>
-            </div>
-            <div className="botoes">
-              <button onClick={emitir} disabled={carregando}>
-                {carregando ? 'Emitindo...' : 'Emitir nota'}
-              </button>
-              <button className="secundario" onClick={() => setEditandoDados(!editandoDados)}>
-                {editandoDados ? 'Pronto' : 'Editar dados'}
-              </button>
-            </div>
-          </>
-        )}
+        <p className="chat-rodape">
+          {!Reconhecimento ? 'Seu navegador não tem reconhecimento de voz (funciona no Chrome e no Edge), mas pode digitar. ' : ''}
+          Emissão simulada, sem validade fiscal.
+        </p>
       </div>
     </div>
   )

@@ -8,6 +8,7 @@ const pool = require('./db');
 const val = require('./validacoes');
 const { gerarToken, verificaToken } = require('./auth');
 const ia = require('./ia');
+const conversa = require('./conversa');
 const { gerarPdf } = require('./pdf');
 const { enviarEmail } = require('./email');
 const cripto = require('./cripto');
@@ -662,25 +663,45 @@ app.post('/notas', verificaToken, async (req, res) => {
 });
 
 // POST /notas/interpretar
-// recebe o texto que a pessoa falou (o front transcreve o audio com o reconhecimento de voz do navegador)
-// a IA tenta entender cliente, servico e valor. Se nao tiver IA configurada usa a busca de palavras (ia.js)
+// recebe o texto que a pessoa falou ou digitou no chat (o front transcreve o audio com o reconhecimento de voz do navegador)
+// e o "rascunho" = o que ja se sabe da nota nas mensagens anteriores (vazio na primeira mensagem)
+// a IA (ou a busca de palavras) entende o texto e o conversa.js junta com o rascunho e decide o que perguntar
 app.post('/notas/interpretar', verificaToken, async (req, res) => {
-  const { texto } = req.body;
+  const { texto, rascunho } = req.body;
   console.log('texto recebido:', texto);
 
-  if (val.vazio(texto)) {
+  // texto vazio so pode quando ja tem rascunho (ex: acabou de cadastrar o cliente pelo chat)
+  if (val.vazio(texto) && !rascunho) {
     return res.status(400).json({ erro: 'Escreva ou fale o que você fez' });
   }
-  if (String(texto).length > 1000) {
+  if (String(texto || '').length > 1000) {
     return res.status(400).json({ erro: 'Texto muito grande, fale só o cliente, o serviço e o valor' });
   }
 
+  // so aproveita do rascunho o que interessa e no formato certo (nao confia no que vem do front)
+  let ant = null;
+  if (rascunho && typeof rascunho == 'object') {
+    const aguardandoOk = ['cliente', 'servico', 'valor', 'documento', 'cadastro'];
+    ant = {
+      cliente_id: Number.isInteger(Number(rascunho.cliente_id)) ? Number(rascunho.cliente_id) : null,
+      servico_id: Number.isInteger(Number(rascunho.servico_id)) ? Number(rascunho.servico_id) : null,
+      valor: val.validarValor(rascunho.valor) ? Number(rascunho.valor) : null,
+      valor_do_cadastro: rascunho.valor_do_cadastro === true,
+      descricao: typeof rascunho.descricao == 'string' ? rascunho.descricao.substring(0, 500) : '',
+      cliente_nome_falado: typeof rascunho.cliente_nome_falado == 'string' ? rascunho.cliente_nome_falado.substring(0, 60) : '',
+      documento: val.soNumeros(rascunho.documento).substring(0, 14),
+      aguardando: aguardandoOk.includes(rascunho.aguardando) ? rascunho.aguardando : '',
+      origem: rascunho.origem == 'ia' ? 'ia' : 'simulacao'
+    };
+  }
+
   try {
+    // so os clientes e servicos desse usuario (filtrado pelo token)
     const clientes = await pool.query('SELECT * FROM cliente WHERE usuario_id = $1', [req.usuario_id]);
     const servicos = await pool.query('SELECT * FROM servico WHERE usuario_id = $1', [req.usuario_id]);
 
-    const resposta = await ia.interpretar(String(texto), clientes.rows, servicos.rows);
-    console.log('resultado da interpretacao (' + resposta.origem + ')', resposta);
+    const resposta = await conversa.responder(String(texto || ''), ant, clientes.rows, servicos.rows);
+    console.log('resultado da interpretacao (' + resposta.origem + '):', resposta.pergunta || 'completa');
     res.json(resposta);
   } catch (err) {
     trataErro(res, err);
