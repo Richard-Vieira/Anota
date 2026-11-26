@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { api, baixarArquivo, formataDinheiro, pegaUsuario } from '../api.js'
-import { mascaraCodigo, mascaraDocumento, mascaraTelefone, soNumeros } from '../formatos.js'
+import { mascaraDocumento, mascaraTelefone, soNumeros } from '../formatos.js'
+import Danfse from '../components/Danfse.jsx'
 
 // reconhecimento de voz do proprio navegador (Web Speech API)
 // no Chrome e no Edge funciona, no Firefox nao tem
@@ -62,23 +63,32 @@ function oQueFalta(r) {
   return f
 }
 
-// previa da nota (a do padrao oficial vem no proximo passo)
-function Previa({ r, clientes, servicos }) {
-  const cli = clientes.find(c => c.id == r.cliente_id)
-  const serv = servicos.find(s => s.id == r.servico_id)
-  const falta = <span className="falta">Falta informar</span>
-  return (
-    <div className="papel">
-      <div className="papel-linha"><span>Cliente</span><span>{cli ? cli.nome : r.cliente_nome_falado ? <>{r.cliente_nome_falado} {falta}</> : falta}</span></div>
-      <div className="papel-linha"><span>CPF/CNPJ</span><span>{cli ? mascaraDocumento(cli.documento) : falta}</span></div>
-      <div className="papel-linha"><span>Serviço</span><span>{serv ? serv.descricao + ' (' + mascaraCodigo(serv.codigo_tributacao) + ')' : falta}</span></div>
-      <div className="papel-linha"><span>Descrição</span><span>{r.descricao ? r.descricao : falta}</span></div>
-      <div className="papel-valor">
-        <span>Valor</span>
-        {r.valor ? <span className="valor-destaque">{formataDinheiro(r.valor)}</span> : falta}
-      </div>
-    </div>
-  )
+// competencia do mes atual ("2026-11")
+function mesAtual() {
+  const h = new Date()
+  return h.getFullYear() + '-' + String(h.getMonth() + 1).padStart(2, '0')
+}
+
+// previa da nota no formato do DANFSe
+// junta o rascunho com os dados do prestador (Configuracoes), do cliente e do servico
+// nos mesmos nomes de campo que a api devolve no GET /notas/:id
+function Previa({ r, clientes, servicos, prestador }) {
+  const cli = clientes.find(c => c.id == r.cliente_id) || {}
+  const serv = servicos.find(s => s.id == r.servico_id) || {}
+  const p = prestador || {}
+  const n = {
+    prestador_nome: p.nome, prestador_cnpj: p.cnpj, prestador_email: p.email,
+    prestador_inscricao_municipal: p.inscricao_municipal, prestador_telefone: p.telefone,
+    prestador_cep: p.cep, prestador_endereco: p.endereco, prestador_numero: p.numero,
+    prestador_bairro: p.bairro, prestador_municipio: p.municipio, prestador_uf: p.uf,
+    // cliente que ainda nao esta cadastrado: mostra o nome que a pessoa falou
+    cliente_nome: cli.nome || r.cliente_nome_falado, cliente_documento: cli.documento || r.documento,
+    cliente_email: cli.email, cliente_telefone: cli.telefone, cliente_cep: cli.cep, cliente_endereco: cli.endereco,
+    cliente_numero: cli.numero, cliente_bairro: cli.bairro, cliente_municipio: cli.municipio, cliente_uf: cli.uf,
+    codigo_tributacao: serv.codigo_tributacao, descricao_codigo: serv.descricao_codigo, codigo_nbs: serv.codigo_nbs,
+    descricao: r.descricao, valor: r.valor, competencia: r.competencia || mesAtual()
+  }
+  return <Danfse n={n} previa />
 }
 
 // card pra cadastrar o cliente ali mesmo no chat
@@ -125,6 +135,7 @@ function NovaNota() {
   const [editando, setEditando] = useState(false)
   const [clientes, setClientes] = useState([])
   const [servicos, setServicos] = useState([])
+  const [prestador, setPrestador] = useState(null) // dados do usuario (Configuracoes) pra previa
   const reconhecimento = useRef(null)
   const campoTexto = useRef(null)
   const fimDoChat = useRef(null)
@@ -135,6 +146,8 @@ function NovaNota() {
     if (r1.ok) setClientes(r1.dados)
     const r2 = await api('/servicos')
     if (r2.ok) setServicos(r2.dados)
+    const r3 = await api('/configuracoes/dados')
+    if (r3.ok) setPrestador(r3.dados)
   }
 
   useEffect(() => {
@@ -324,7 +337,7 @@ function NovaNota() {
     // primeiro salva a nota
     const r1 = await api('/notas', {
       method: 'POST',
-      body: { cliente_id: rascunho.cliente_id, servico_id: rascunho.servico_id, descricao: rascunho.descricao, valor: rascunho.valor }
+      body: { cliente_id: rascunho.cliente_id, servico_id: rascunho.servico_id, descricao: rascunho.descricao, valor: rascunho.valor, competencia: rascunho.competencia || mesAtual() }
     })
     if (!r1.ok) {
       setOcupado(false)
@@ -428,9 +441,13 @@ function NovaNota() {
             <label>Descrição do serviço</label>
             <input value={rascunho.descricao} onChange={e => mudaRascunho('descricao', e.target.value)} />
           </div>
-          <div style={{ width: 160 }}>
+          <div style={{ width: 140 }}>
             <label>Valor (R$)</label>
             <input type="number" step="0.01" min="0" value={rascunho.valor} onChange={e => mudaRascunho('valor', e.target.value)} />
+          </div>
+          <div style={{ width: 170 }}>
+            <label>Competência</label>
+            <input type="month" max={mesAtual()} value={rascunho.competencia || mesAtual()} onChange={e => mudaRascunho('competencia', e.target.value)} />
           </div>
         </div>
       </div>
@@ -453,15 +470,16 @@ function NovaNota() {
         ? <p className="fala">{msg.foto.pergunta}</p>
         : <p className="texto-menor">Prévia atualizada mais abaixo.</p>
     } else if (msg.tipo == 'previa' && msg.status == 'emitida') {
-      conteudo = <Previa r={msg.foto} clientes={clientes} servicos={servicos} />
+      // ja virou nota, nao repete o DANFSe inteiro (o PDF tem tudo)
+      conteudo = <p className="texto-menor">Prévia conferida e emitida.</p>
     } else if (msg.tipo == 'previa' && !rascunho) {
-      conteudo = <Previa r={msg.foto} clientes={clientes} servicos={servicos} />
+      conteudo = <Previa r={msg.foto} clientes={clientes} servicos={servicos} prestador={prestador} />
     } else if (msg.tipo == 'previa') {
       const r = rascunho
       const falta = oQueFalta(r)
       conteudo = (
         <>
-          <Previa r={r} clientes={clientes} servicos={servicos} />
+          <Previa r={r} clientes={clientes} servicos={servicos} prestador={prestador} />
           <p className="origem">
             {r.origem == 'ia' ? 'interpretado por IA' : 'interpretação simulada'}
             {r.valor_do_cadastro && r.valor ? ' · valor padrão do serviço' : ''}

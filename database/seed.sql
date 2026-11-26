@@ -46,3 +46,26 @@ INSERT INTO nota_fiscal (usuario_id, cliente_id, servico_id, descricao, valor, d
 (1, 4, 1, 'Reboco do muro', 1200.00, '2026-10-10', 'cancelada', '000008'),
 (1, 3, 1, 'Reboco e acabamento - fachada', 2800.00, '2026-10-30', 'emitida', '000009'),
 (1, 2, 4, 'Pequenos reparos no telhado', 400.00, '2026-11-12', 'pendente', NULL);
+
+-- competencia e dados da emissao (DPS e chave de acesso simulada) das notas de exemplo
+UPDATE nota_fiscal SET competencia = DATE_TRUNC('month', data_emissao)::date;
+UPDATE nota_fiscal SET data_hora_emissao = data_emissao + TIME '09:00', numero_dps = numero_nfse::int, serie_dps = '00001'
+WHERE numero_nfse IS NOT NULL;
+
+-- chave de acesso simulada (mesma conta do backend: base de 49 numeros + digito verificador modulo 11)
+UPDATE nota_fiscal n SET chave_acesso = x.base || x.dv
+FROM (
+    SELECT b.id, b.base,
+           (CASE WHEN 11 - (SUM(SUBSTR(b.base, i, 1)::int * (2 + ((49 - i) % 8))) % 11) >= 10 THEN 0
+                 ELSE 11 - (SUM(SUBSTR(b.base, i, 1)::int * (2 + ((49 - i) % 8))) % 11) END)::text AS dv
+    FROM (
+        SELECT n2.id,
+               LPAD(COALESCE(u.codigo_ibge, '0'), 7, '0') || '2' || '2' || LPAD(u.cnpj, 14, '0') ||
+               LPAD(n2.numero_nfse, 13, '0') || TO_CHAR(n2.data_emissao, 'YYMM') || LPAD(((n2.id * 7919) % 1000000000)::text, 9, '0') AS base
+        FROM nota_fiscal n2 JOIN usuario u ON u.id = n2.usuario_id
+        WHERE n2.numero_nfse IS NOT NULL
+    ) b
+    CROSS JOIN generate_series(1, 49) i
+    GROUP BY b.id, b.base
+) x
+WHERE n.id = x.id;

@@ -531,7 +531,7 @@ button.largo {
   line-height: 1.55;
 }
 
-.balao-anota-conteudo .papel + .origem + .fala {
+.balao-anota-conteudo .origem + .fala {
   margin-top: 14px;
 }
 
@@ -726,45 +726,118 @@ button.largo {
   text-align: center;
 }
 
-/* o "papel" da nota na previa */
-.papel {
+/* =============== DANFSe (previa e detalhe da nota) =============== */
+.danfse {
+  border: 1px solid #C9D1CD;
+  border-radius: 10px;
   background: #FFFFFF;
-  border: 1px dashed #9AA7A1;
-  border-radius: 8px;
-  padding: 8px 24px 24px;
+  overflow: hidden;
+  font-size: 14px;
 }
 
-.papel-linha {
+.danfse-cabecalho {
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px 0;
-  border-bottom: 1px solid #E6EAE8;
-  font-size: 15px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #C9D1CD;
 }
 
-.papel-linha span:first-child {
+.danfse-titulo {
+  display: block;
+  font-family: 'Bricolage Grotesque', 'Inter', sans-serif;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.danfse-sub {
+  font-size: 13px;
   color: #5A6560;
 }
 
-.papel-linha span:last-child {
+.danfse-cabecalho-dir {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
   text-align: right;
 }
 
-.papel-valor {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  padding-top: 20px;
+.danfse-ambiente {
+  color: #6B4300;
+  font-weight: 500;
 }
 
-.papel-valor span {
+.danfse-bloco-titulo {
+  background: #F3F6F4;
+  border-bottom: 1px solid #DCE1DE;
+  padding: 5px 16px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #16201C;
+}
+
+.danfse-bloco + .danfse-bloco .danfse-bloco-titulo,
+.danfse-bloco:first-of-type .danfse-bloco-titulo {
+  border-top: 1px solid #DCE1DE;
+}
+
+/* grade de 4 colunas, igual o documento oficial */
+.danfse-grade {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.danfse-campo {
+  padding: 7px 16px 9px;
+  border-bottom: 1px solid #EEF1EF;
+  min-width: 0;
+}
+
+.danfse-campo.col-2 {
+  grid-column: span 2;
+}
+
+.danfse-campo.col-4 {
+  grid-column: span 4;
+}
+
+.danfse-rotulo {
+  display: block;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
   color: #5A6560;
+  margin-bottom: 2px;
 }
 
-.valor-destaque {
-  font-size: 36px;
-  font-weight: 600;
+.danfse-valor {
+  display: block;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+
+.danfse-chave .danfse-valor {
+  font-family: ui-monospace, 'Courier New', monospace;
+  font-size: 13px;
+}
+
+.danfse-cinza {
+  color: #8A9590;
+}
+
+.danfse-liquido .valor-destaque {
+  font-size: 24px;
+  color: #0F6E56;
+}
+
+.danfse-info {
+  margin: 0;
+  padding: 10px 16px;
+  background: #FDF3DC;
+  color: #6B4300;
+  font-size: 13px;
 }
 
 /* campo que a IA nao conseguiu preencher */
@@ -1218,6 +1291,12 @@ td.valor-celula {
   }
   .chat-vazio h1 {
     font-size: 28px;
+  }
+  .danfse-grade {
+    grid-template-columns: 1fr 1fr;
+  }
+  .danfse-campo.col-4 {
+    grid-column: span 2;
   }
   .botao-gerar {
     padding: 0 14px;

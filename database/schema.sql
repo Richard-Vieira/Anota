@@ -72,6 +72,8 @@ CREATE TABLE servico (
 -- notas fiscais
 -- status: pendente, emitida, enviada (mandou pro cliente) ou cancelada
 -- numero_nfse: numero que volta quando emite (etapa 3)
+-- competencia: mes/ano do servico (salva como dia 1 do mes)
+-- chave_acesso: 50 numeros, SIMULADA, gerada so na emissao (etapa 4, padrao do DANFSe)
 CREATE TABLE nota_fiscal (
     id SERIAL PRIMARY KEY,
     usuario_id INT NOT NULL REFERENCES usuario(id),
@@ -81,5 +83,10 @@ CREATE TABLE nota_fiscal (
     valor DECIMAL(10,2) NOT NULL,
     data_emissao DATE,
     status VARCHAR(20) DEFAULT 'pendente',
-    numero_nfse VARCHAR(20)
+    numero_nfse VARCHAR(20),
+    competencia DATE DEFAULT DATE_TRUNC('month', CURRENT_DATE),
+    data_hora_emissao TIMESTAMP,
+    chave_acesso VARCHAR(50),
+    numero_dps INT,
+    serie_dps VARCHAR(5)
 );

@@ -602,7 +602,9 @@ app.delete('/servicos/:id', verificaToken, async (req, res) => {
 // to_char pq senao a data vem com fuso e muda o dia
 const SQL_NOTAS = `SELECT n.id, n.descricao, n.valor, to_char(n.data_emissao, 'YYYY-MM-DD') AS data_emissao, n.status,
                           n.numero_nfse, n.cliente_id, c.nome AS cliente_nome, c.email AS cliente_email,
-                          c.telefone AS cliente_telefone, n.servico_id, s.descricao AS servico_descricao
+                          c.telefone AS cliente_telefone, c.documento AS cliente_documento, n.servico_id,
+                          s.descricao AS servico_descricao, s.codigo_tributacao,
+                          to_char(n.competencia, 'YYYY-MM') AS competencia
                    FROM nota_fiscal n
                    JOIN cliente c ON c.id = n.cliente_id
                    JOIN servico s ON s.id = n.servico_id
@@ -618,9 +620,24 @@ app.get('/notas', verificaToken, async (req, res) => {
 });
 
 app.post('/notas', verificaToken, async (req, res) => {
-  const { cliente_id, servico_id, descricao, valor } = req.body;
+  const { cliente_id, servico_id, descricao, valor, competencia } = req.body;
   const usuario_id = req.usuario_id;
   console.log('criando nota', req.body);
+
+  // competencia = mes/ano do servico ("2026-11"). Se nao mandar usa o mes atual
+  // nao deixa competencia no futuro (o servico ja tem que ter sido feito)
+  let comp = null;
+  if (!val.vazio(competencia)) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(competencia))) {
+      return res.status(400).json({ erro: 'Competência inválida (use ano-mês, ex: 2026-11)' });
+    }
+    const hoje = new Date();
+    const atual = hoje.getFullYear() + '-' + String(hoje.getMonth() + 1).padStart(2, '0');
+    if (competencia > atual) {
+      return res.status(400).json({ erro: 'A competência não pode ser um mês que ainda não chegou' });
+    }
+    comp = competencia + '-01';
+  }
 
   if (val.vazio(cliente_id)) {
     return res.status(400).json({ erro: 'Escolha o cliente' });
@@ -651,10 +668,11 @@ app.post('/notas', verificaToken, async (req, res) => {
 
     const v = Number(String(valor).replace(',', '.'));
     const resultado = await pool.query(
-      `INSERT INTO nota_fiscal (usuario_id, cliente_id, servico_id, descricao, valor, data_emissao, status)
-       VALUES ($1, $2, $3, $4, $5, CURRENT_DATE, 'pendente')
-       RETURNING id, usuario_id, cliente_id, servico_id, descricao, valor, to_char(data_emissao, 'YYYY-MM-DD') AS data_emissao, status`,
-      [usuario_id, cliente_id, servico_id, descricao.trim(), v]
+      `INSERT INTO nota_fiscal (usuario_id, cliente_id, servico_id, descricao, valor, data_emissao, status, competencia)
+       VALUES ($1, $2, $3, $4, $5, CURRENT_DATE, 'pendente', COALESCE($6::date, DATE_TRUNC('month', CURRENT_DATE)::date))
+       RETURNING id, usuario_id, cliente_id, servico_id, descricao, valor, to_char(data_emissao, 'YYYY-MM-DD') AS data_emissao,
+                 status, to_char(competencia, 'YYYY-MM') AS competencia`,
+      [usuario_id, cliente_id, servico_id, descricao.trim().substring(0, 500), v, comp]
     );
     res.status(201).json(resultado.rows[0]);
   } catch (err) {
@@ -708,6 +726,26 @@ app.post('/notas/interpretar', verificaToken, async (req, res) => {
   }
 });
 
+// ajustado com IA para melhorar o codigo
+// monta a chave de acesso SIMULADA de 50 numeros, na mesma ordem da NFS-e nacional:
+// municipio IBGE (7) + ambiente gerador (1) + tipo de inscricao, 2 = CNPJ (1) + CNPJ (14)
+// + numero da NFS-e (13) + ano e mes AAMM (4) + codigo aleatorio (9) + digito verificador (1)
+function gerarChaveAcesso(codigoIbge, cnpj, numero, data) {
+  const aamm = String(data.getFullYear()).substring(2) + String(data.getMonth() + 1).padStart(2, '0');
+  const aleatorio = String(Math.floor(Math.random() * 1000000000)).padStart(9, '0');
+  const base = String(codigoIbge || '0').padStart(7, '0') + '2' + '2' + String(cnpj).padStart(14, '0') +
+    String(numero).padStart(13, '0') + aamm + aleatorio;
+  // digito verificador modulo 11: pesos 2,3,4...9,2,3... da direita pra esquerda
+  let soma = 0;
+  for (let i = 0; i < base.length; i++) {
+    const peso = 2 + ((base.length - 1 - i) % 8);
+    soma += Number(base[i]) * peso;
+  }
+  let dv = 11 - (soma % 11);
+  if (dv >= 10) dv = 0;
+  return base + dv;
+}
+
 // POST /notas/:id/emitir
 // SIMULADO: nao manda nada pro governo, so gera o proximo numero e muda o status pra emitida
 // pra emitir de verdade no Sistema Nacional da NFS-e precisa:
@@ -733,12 +771,18 @@ app.post('/notas/:id/emitir', verificaToken, async (req, res) => {
     const ultimo = await pool.query('SELECT MAX(numero_nfse) AS ultimo FROM nota_fiscal WHERE usuario_id = $1', [usuario_id]);
     const numero = String(Number(ultimo.rows[0].ultimo || 0) + 1).padStart(6, '0');
 
+    // chave de acesso SIMULADA (50 numeros) no formato da NFS-e nacional
+    const u = await pool.query('SELECT cnpj, codigo_ibge FROM usuario WHERE id = $1', [usuario_id]);
+    const chave = gerarChaveAcesso(u.rows[0].codigo_ibge, u.rows[0].cnpj, numero, new Date());
+
     // o "AND status = 'pendente'" e pra nao emitir duas vezes se clicar 2x rapido
+    // a DPS usa o mesmo numero da nota e a serie 00001 (o ANota so tem uma serie)
     const r = await pool.query(
-      `UPDATE nota_fiscal SET status = 'emitida', data_emissao = CURRENT_DATE, numero_nfse = $1
+      `UPDATE nota_fiscal SET status = 'emitida', data_emissao = CURRENT_DATE, numero_nfse = $1,
+              data_hora_emissao = NOW(), chave_acesso = $4, numero_dps = $5, serie_dps = '00001'
        WHERE id = $2 AND usuario_id = $3 AND status = 'pendente' AND numero_nfse IS NULL
-       RETURNING id, numero_nfse, status, to_char(data_emissao, 'YYYY-MM-DD') AS data_emissao`,
-      [numero, id, usuario_id]
+       RETURNING id, numero_nfse, status, to_char(data_emissao, 'YYYY-MM-DD') AS data_emissao, chave_acesso`,
+      [numero, id, usuario_id, chave, Number(numero)]
     );
     if (r.rows.length == 0) {
       return res.status(400).json({ erro: 'Essa nota já foi emitida' });
@@ -749,6 +793,7 @@ app.post('/notas/:id/emitir', verificaToken, async (req, res) => {
       id: Number(id),
       numero: r.rows[0].numero_nfse,
       data_emissao: r.rows[0].data_emissao,
+      chave_acesso: r.rows[0].chave_acesso,
       status: 'emitida'
     });
   } catch (err) {
@@ -756,13 +801,21 @@ app.post('/notas/:id/emitir', verificaToken, async (req, res) => {
   }
 });
 
-// busca a nota com tudo que precisa pro PDF e pro email (prestador, cliente e servico)
+// busca a nota com tudo que precisa pro DANFSe (tela), pro PDF e pro email: prestador, tomador e servico
 async function buscaNotaCompleta(id, usuario_id) {
   const r = await pool.query(
     `SELECT n.id, n.descricao, n.valor, to_char(n.data_emissao, 'YYYY-MM-DD') AS data_emissao, n.status, n.numero_nfse,
+            to_char(n.competencia, 'YYYY-MM') AS competencia,
+            to_char(n.data_hora_emissao, 'DD/MM/YYYY HH24:MI') AS data_hora_emissao,
+            n.chave_acesso, n.numero_dps, n.serie_dps,
             u.nome AS prestador_nome, u.cnpj AS prestador_cnpj, u.email AS prestador_email,
+            u.inscricao_municipal AS prestador_inscricao_municipal, u.telefone AS prestador_telefone,
+            u.cep AS prestador_cep, u.endereco AS prestador_endereco, u.numero AS prestador_numero,
+            u.bairro AS prestador_bairro, u.municipio AS prestador_municipio, u.uf AS prestador_uf,
             c.nome AS cliente_nome, c.documento AS cliente_documento, c.email AS cliente_email, c.telefone AS cliente_telefone,
-            s.descricao AS servico_descricao
+            c.cep AS cliente_cep, c.endereco AS cliente_endereco, c.numero AS cliente_numero,
+            c.bairro AS cliente_bairro, c.municipio AS cliente_municipio, c.uf AS cliente_uf,
+            s.descricao AS servico_descricao, s.codigo_tributacao, s.descricao_codigo, s.codigo_nbs
      FROM nota_fiscal n
      JOIN usuario u ON u.id = n.usuario_id
      JOIN cliente c ON c.id = n.cliente_id
@@ -772,6 +825,22 @@ async function buscaNotaCompleta(id, usuario_id) {
   );
   return r.rows[0];
 }
+
+// GET /notas/:id - a nota completa (a tela Notas mostra no formato do DANFSe)
+app.get('/notas/:id', verificaToken, async (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) {
+    return res.status(400).json({ erro: 'Nota inválida' });
+  }
+  try {
+    const nota = await buscaNotaCompleta(req.params.id, req.usuario_id);
+    if (!nota) {
+      return res.status(404).json({ erro: 'Nota não encontrada' });
+    }
+    res.json(nota);
+  } catch (err) {
+    trataErro(res, err);
+  }
+});
 
 // GET /notas/:id/pdf - baixa o PDF da nota
 app.get('/notas/:id/pdf', verificaToken, async (req, res) => {
