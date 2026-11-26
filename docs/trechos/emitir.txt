@@ -1,0 +1,30 @@
+// backend/server.js (linhas 379 a 407) - rota de emitir a nota (simulada), com a trava pra nao emitir 2 vezes
+app.post('/notas/:id/emitir', verificaToken, async (req, res) => {
+  const id = req.params.id;
+  const usuario_id = req.usuario_id;
+
+  try {
+    const nota = await pool.query('SELECT * FROM nota_fiscal WHERE id = $1 AND usuario_id = $2', [id, usuario_id]);
+    if (nota.rows.length == 0) {
+      return res.status(404).json({ erro: 'Nota não encontrada' });
+    }
+    if (nota.rows[0].status == 'cancelada') {
+      return res.status(400).json({ erro: 'Essa nota está cancelada' });
+    } else if (nota.rows[0].status != 'pendente' || nota.rows[0].numero_nfse) {
+      return res.status(400).json({ erro: 'Essa nota já foi emitida' });
+    }
+
+    // proximo numero da sequencia desse usuario (salvo com 6 digitos: 000001, 000002...)
+    const ultimo = await pool.query('SELECT MAX(numero_nfse) AS ultimo FROM nota_fiscal WHERE usuario_id = $1', [usuario_id]);
+    const numero = String(Number(ultimo.rows[0].ultimo || 0) + 1).padStart(6, '0');
+
+    // o "AND status = 'pendente'" e pra nao emitir duas vezes se clicar 2x rapido
+    const r = await pool.query(
+      `UPDATE nota_fiscal SET status = 'emitida', data_emissao = CURRENT_DATE, numero_nfse = $1
+       WHERE id = $2 AND usuario_id = $3 AND status = 'pendente' AND numero_nfse IS NULL
+       RETURNING id, numero_nfse, status, to_char(data_emissao, 'YYYY-MM-DD') AS data_emissao`,
+      [numero, id, usuario_id]
+    );
+    if (r.rows.length == 0) {
+      return res.status(400).json({ erro: 'Essa nota já foi emitida' });
+    }

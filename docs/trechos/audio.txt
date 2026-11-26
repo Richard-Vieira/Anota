@@ -1,0 +1,27 @@
+// frontend/src/pages/NovaNota.jsx (linhas 7 e 96 a 137) - microfone com a Web Speech API do navegador
+const Reconhecimento = window.SpeechRecognition || window.webkitSpeechRecognition
+
+  function microfone() {
+    // ... (se ja estiver gravando, para o microfone)
+    const rec = new Reconhecimento()
+    rec.lang = 'pt-BR'
+    rec.continuous = true // continua ouvindo ate clicar de novo
+    rec.interimResults = true // mostra o texto enquanto a pessoa ainda ta falando
+
+    // se ja tinha texto no campo, junta com o que falar agora
+    const textoAntes = texto.trim() == '' ? '' : texto.trim() + ' '
+
+    rec.onresult = (evento) => {
+      let falado = ''
+      for (let i = 0; i < evento.results.length; i++) {
+        falado += evento.results[i][0].transcript
+      }
+      setTexto(textoAntes + falado)
+    }
+    // ... (rec.onerror: mostra uma mensagem se o navegador bloquear o microfone ou nao ouvir nada)
+    rec.onend = () => setGravando(false)
+
+    rec.start()
+    reconhecimento.current = rec
+    setGravando(true)
+  }

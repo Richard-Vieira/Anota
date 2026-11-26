@@ -1,0 +1,102 @@
+{
+  "observacao": "Respostas reais da API rodando localmente com o banco de exemplo (seed.sql). O token foi cortado de proposito.",
+  "POST /login": {
+    "envio": {
+      "email": "marcos@anota.com",
+      "senha": "123456"
+    },
+    "resposta": {
+      "token": "eyJhbGciOiJIUzI1NiIs...(token cortado)",
+      "usuario": {
+        "id": 1,
+        "nome": "Marcos Pereira",
+        "cnpj": "45231876000187",
+        "email": "marcos@anota.com"
+      }
+    }
+  },
+  "POST /notas/interpretar": {
+    "envio": {
+      "texto": "Fiz a pintura da casa da Joana Silva, ficou 1.500 reais"
+    },
+    "resposta": {
+      "cliente": {
+        "id": 1,
+        "usuario_id": 1,
+        "nome": "Joana Silva",
+        "documento": "52998224725",
+        "email": "joana.silva@email.com",
+        "telefone": "(49) 99911-2233"
+      },
+      "servico": {
+        "id": 3,
+        "usuario_id": 1,
+        "descricao": "Pintura",
+        "valor": "950.00"
+      },
+      "valor": 1500,
+      "valor_do_cadastro": false,
+      "descricao": "Pintura - Joana Silva",
+      "faltando": [],
+      "pergunta": "",
+      "origem": "simulacao"
+    }
+  },
+  "GET /faturamento?ano=2026": {
+    "resposta": {
+      "ano": 2026,
+      "total": 15900,
+      "limite_mei": 81000,
+      "meses": [
+        {
+          "mes": 1,
+          "total": 0
+        },
+        {
+          "mes": 2,
+          "total": 0
+        },
+        {
+          "mes": 3,
+          "total": 0
+        },
+        {
+          "mes": 4,
+          "total": 0
+        },
+        {
+          "mes": 5,
+          "total": 0
+        },
+        {
+          "mes": 6,
+          "total": 4450
+        },
+        {
+          "mes": 7,
+          "total": 2050
+        },
+        {
+          "mes": 8,
+          "total": 4200
+        },
+        {
+          "mes": 9,
+          "total": 2400
+        },
+        {
+          "mes": 10,
+          "total": 2800
+        },
+        {
+          "mes": 11,
+          "total": 0
+        },
+        {
+          "mes": 12,
+          "total": 0
+        }
+      ]
+    }
+  }
+}

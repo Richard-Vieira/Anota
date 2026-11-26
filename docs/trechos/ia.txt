@@ -1,0 +1,27 @@
+// backend/ia.js (linhas 259 a 284) - chama a IA (Claude) e, se der erro ou nao tiver chave, usa a simulacao
+  const listaClientes = clientes.map(c => ({ id: c.id, nome: c.nome }));
+  const listaServicos = servicos.map(s => ({ id: s.id, descricao: s.descricao, valor_padrao: Number(s.valor) }));
+
+  const mensagem =
+    'Clientes cadastrados:\n' + JSON.stringify(listaClientes) +
+    '\n\nServiços cadastrados:\n' + JSON.stringify(listaServicos) +
+    '\n\nO que o prestador disse:\n"' + texto + '"';
+
+  const resposta = await chamarClaude(sistema, mensagem, SCHEMA_NOTA);
+  const json = JSON.parse(resposta);
+  return validarRespostaIA(json, clientes, servicos);
+}
+
+// funcao que o server.js usa: tenta a IA e se nao der usa a simulacao
+async function interpretar(texto, clientes, servicos) {
+  if (temChave()) {
+    try {
+      const r = await interpretarComIA(texto, clientes, servicos);
+      r.origem = 'ia';
+      return r;
+    } catch (err) {
+      console.log('erro na IA, usando a simulacao:', err.message);
+    }
+  }
+  return interpretarSimulado(texto, clientes, servicos);
+}
