@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { api, formataDinheiro } from '../api.js'
-import { mascaraCodigo, mascaraNBS, soNumeros } from '../formatos.js'
+import { mascaraCodigo, soNumeros } from '../formatos.js'
 
-const vazio = { descricao: '', codigo_tributacao: '', descricao_codigo: '', codigo_nbs: '', valor: '', palavras_chave: '' }
+const vazio = { descricao: '', codigo_tributacao: '', descricao_codigo: '', valor: '', palavras_chave: '' }
 
 // copiei a tela de clientes e adaptei
 function Servicos() {
@@ -90,7 +90,6 @@ function Servicos() {
       descricao: s.descricao,
       codigo_tributacao: s.codigo_tributacao || '',
       descricao_codigo: s.descricao_codigo || '',
-      codigo_nbs: s.codigo_nbs || '',
       valor: s.valor,
       palavras_chave: s.palavras_chave || ''
     })
@@ -168,16 +167,8 @@ function Servicos() {
         <label>Descrição do código</label>
         <textarea rows="2" value={form.descricao_codigo} onChange={e => campo('descricao_codigo', e.target.value)} placeholder="Copie a descrição da tabela oficial" />
 
-        <div className="grade-campos">
-          <div className="campo-metade">
-            <label>Código NBS <span className="texto-menor">(opcional)</span></label>
-            <input value={mascaraNBS(form.codigo_nbs)} onChange={e => campo('codigo_nbs', soNumeros(e.target.value).substring(0, 9))} placeholder="0.0000.00.00" inputMode="numeric" />
-          </div>
-          <div className="campo-metade">
-            <label>Valor padrão (R$)</label>
-            <input type="number" step="0.01" min="0" value={form.valor} onChange={e => campo('valor', e.target.value)} />
-          </div>
-        </div>
+        <label>Valor padrão (R$)</label>
+        <input type="number" step="0.01" min="0" value={form.valor} onChange={e => campo('valor', e.target.value)} />
 
         <label>Palavras-chave</label>
         <input value={form.palavras_chave} onChange={e => campo('palavras_chave', e.target.value)} placeholder="pintura, pintei, tinta" />

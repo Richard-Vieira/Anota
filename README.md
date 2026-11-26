@@ -86,7 +86,7 @@ O seed também cria os dados do prestador, 4 clientes com endereço, 4 serviços
 - **Nova nota (chat):** a pessoa fala no microfone (o texto vai aparecendo enquanto fala) ou digita e clica em **Gerar prévia**. O ANota responde com a prévia no formato do DANFSe. Se faltar o cliente, o serviço ou o valor, ele pergunta e a resposta completa a mesma nota. Se o cliente não existir, oferece cadastrar ali mesmo com o CPF/CNPJ. Depois de emitir aparecem os botões de PDF, e-mail e WhatsApp
 - **Notas:** filtro por mês, ano, situação e cliente; total faturado, quantidade e ticket médio do período; total do ano com a barra do limite do MEI; gráfico por mês (clicar no mês filtra); pergunta sobre o faturamento; e o detalhe de cada nota no formato do DANFSe
 - **Clientes:** pessoa física ou jurídica, com endereço. O CEP preenche o endereço (ViaCEP) e, pra pessoa jurídica, o botão **Buscar pelo CNPJ** preenche nome e endereço (BrasilAPI)
-- **Serviços:** descrição, código de tributação nacional (00.00.00), descrição do código, NBS, valor padrão e palavras-chave (usadas pra reconhecer o serviço no que a pessoa fala)
+- **Serviços:** descrição, código de tributação nacional (00.00.00), descrição do código, valor padrão e palavras-chave (usadas pra reconhecer o serviço no que a pessoa fala)
 - **Configurações** (no menu do nome do usuário): **Meus dados** (dados do prestador que vão na nota, com busca por CNPJ e CEP) e **E-mail** (SMTP próprio, com e-mail de teste)
 
 ### Prévia e PDF no padrão do DANFSe

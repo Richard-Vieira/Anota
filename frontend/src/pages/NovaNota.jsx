@@ -85,7 +85,7 @@ function Previa({ r, clientes, servicos, prestador }) {
     cliente_nome: cli.nome || r.cliente_nome_falado, cliente_documento: cli.documento || r.documento,
     cliente_email: cli.email, cliente_telefone: cli.telefone, cliente_cep: cli.cep, cliente_endereco: cli.endereco,
     cliente_numero: cli.numero, cliente_bairro: cli.bairro, cliente_municipio: cli.municipio, cliente_uf: cli.uf,
-    codigo_tributacao: serv.codigo_tributacao, descricao_codigo: serv.descricao_codigo, codigo_nbs: serv.codigo_nbs,
+    codigo_tributacao: serv.codigo_tributacao, descricao_codigo: serv.descricao_codigo,
     descricao: r.descricao, valor: r.valor, competencia: r.competencia || mesAtual()
   }
   return <Danfse n={n} previa />

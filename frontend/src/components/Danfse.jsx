@@ -1,5 +1,5 @@
 import { formataDinheiro } from '../api.js'
-import { mascaraCodigo, mascaraDocumento, mascaraNBS, mascaraCEP, municipioUF } from '../formatos.js'
+import { mascaraCodigo, mascaraDocumento, mascaraCEP, municipioUF } from '../formatos.js'
 
 // DANFSe = Documento Auxiliar da NFS-e (blocos da Nota Tecnica 008/2026 da NFS-e Nacional)
 // usa na previa do chat (previa = true) e no detalhe da nota na tela Notas
@@ -101,8 +101,7 @@ function Danfse({ n, previa }) {
       <div className="danfse-bloco">
         <div className="danfse-bloco-titulo">Serviço prestado</div>
         <div className="danfse-grade">
-          <Campo rotulo="Código de tributação nacional" valor={n.codigo_tributacao ? mascaraCodigo(n.codigo_tributacao) : ''} obrigatorio />
-          <Campo rotulo="Código da NBS" valor={n.codigo_nbs ? mascaraNBS(n.codigo_nbs) : ''} />
+          <Campo rotulo="Código de tributação nacional" valor={n.codigo_tributacao ? mascaraCodigo(n.codigo_tributacao) : ''} obrigatorio largura="2" />
           <Campo rotulo="Local da prestação" valor={local} obrigatorio largura="2" />
           <Campo rotulo="Descrição do código de tributação nacional" valor={n.descricao_codigo} obrigatorio largura="4" />
           <Campo rotulo="Descrição do serviço" valor={n.descricao} obrigatorio largura="4" />

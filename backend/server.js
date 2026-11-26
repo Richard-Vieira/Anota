@@ -508,12 +508,11 @@ app.get('/servicos', verificaToken, async (req, res) => {
 // validacao do servico (usa no post e no put)
 // o codigo de tributacao e so conferido no formato (6 numeros), nao tem a tabela oficial aqui
 function validaServico(body) {
-  const { descricao, valor, codigo_tributacao, codigo_nbs, descricao_codigo, palavras_chave } = body;
+  const { descricao, valor, codigo_tributacao, descricao_codigo, palavras_chave } = body;
   if (val.vazio(descricao)) return 'A descrição do serviço é obrigatória';
   if (String(descricao).trim().length > 150) return 'A descrição pode ter no máximo 150 letras';
   if (val.vazio(codigo_tributacao)) return 'O código de tributação nacional é obrigatório';
   if (!/^\d{6}$/.test(val.soNumeros(codigo_tributacao))) return 'O código de tributação nacional tem 6 números (00.00.00)';
-  if (!val.vazio(codigo_nbs) && !/^\d{9}$/.test(val.soNumeros(codigo_nbs))) return 'O código NBS tem 9 números (0.0000.00.00)';
   if (!val.vazio(descricao_codigo) && String(descricao_codigo).length > 300) return 'A descrição do código pode ter no máximo 300 letras';
   if (!val.vazio(palavras_chave) && String(palavras_chave).length > 500) return 'Palavras-chave demais (máximo 500 letras)';
   if (val.vazio(valor)) return 'O valor é obrigatório';
@@ -539,7 +538,6 @@ function paramsServico(b) {
     Number(String(b.valor).replace(',', '.')),
     val.soNumeros(b.codigo_tributacao),
     textoOuNull(b.descricao_codigo, 300),
-    val.vazio(b.codigo_nbs) ? null : val.soNumeros(b.codigo_nbs),
     arrumaPalavras(b.palavras_chave)
   ];
 }
@@ -552,8 +550,8 @@ app.post('/servicos', verificaToken, async (req, res) => {
 
   try {
     const resultado = await pool.query(
-      `INSERT INTO servico (descricao, valor, codigo_tributacao, descricao_codigo, codigo_nbs, palavras_chave, usuario_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      `INSERT INTO servico (descricao, valor, codigo_tributacao, descricao_codigo, palavras_chave, usuario_id)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
       [...paramsServico(req.body), req.usuario_id]
     );
     res.status(201).json(resultado.rows[0]);
@@ -571,8 +569,8 @@ app.put('/servicos/:id', verificaToken, async (req, res) => {
 
   try {
     const res2 = await pool.query(
-      `UPDATE servico SET descricao = $1, valor = $2, codigo_tributacao = $3, descricao_codigo = $4, codigo_nbs = $5, palavras_chave = $6
-       WHERE id = $7 AND usuario_id = $8 RETURNING *`,
+      `UPDATE servico SET descricao = $1, valor = $2, codigo_tributacao = $3, descricao_codigo = $4, palavras_chave = $5
+       WHERE id = $6 AND usuario_id = $7 RETURNING *`,
       [...paramsServico(req.body), id, req.usuario_id]
     );
     if (res2.rows.length == 0) {
@@ -859,7 +857,7 @@ async function buscaNotaCompleta(id, usuario_id) {
             c.nome AS cliente_nome, c.documento AS cliente_documento, c.email AS cliente_email, c.telefone AS cliente_telefone,
             c.cep AS cliente_cep, c.endereco AS cliente_endereco, c.numero AS cliente_numero,
             c.bairro AS cliente_bairro, c.municipio AS cliente_municipio, c.uf AS cliente_uf,
-            s.descricao AS servico_descricao, s.codigo_tributacao, s.descricao_codigo, s.codigo_nbs
+            s.descricao AS servico_descricao, s.codigo_tributacao, s.descricao_codigo
      FROM nota_fiscal n
      JOIN usuario u ON u.id = n.usuario_id
      JOIN cliente c ON c.id = n.cliente_id

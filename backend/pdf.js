@@ -34,11 +34,6 @@ function formataCodigo(c) {
   return c.length == 6 ? c.replace(/(\d{2})(\d{2})(\d{2})/, '$1.$2.$3') : c;
 }
 
-function formataNBS(c) {
-  c = String(c || '');
-  return c.length == 9 ? c.replace(/(\d)(\d{4})(\d{2})(\d{2})/, '$1.$2.$3.$4') : c;
-}
-
 // "2026-11" -> "11/2026"
 function formataCompetencia(c) {
   if (!c) return '';
@@ -140,8 +135,7 @@ function gerarPdf(nota) {
       : municipioUF(nota.prestador_municipio, nota.prestador_uf);
     bloco('SERVIÇO PRESTADO', [
       [
-        ['Cód. tributação nacional', formataCodigo(nota.codigo_tributacao), 1],
-        ['Código da NBS', formataNBS(nota.codigo_nbs), 1],
+        ['Código de tributação nacional', formataCodigo(nota.codigo_tributacao), 2],
         ['Local da prestação', local, 2]
       ],
       [['Descrição do código de tributação nacional', nota.descricao_codigo, 4]],

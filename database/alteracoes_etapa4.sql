@@ -34,11 +34,9 @@ WHERE email = 'marcos@anota.com';
 -- =============== SERVICOS COM CODIGO DE TRIBUTACAO ===============
 -- codigo_tributacao = codigo de tributacao nacional da NFS-e (6 numeros, mostra como 00.00.00)
 --   a tabela oficial fica no portal da NFS-e (https://www.gov.br/nfse), o sistema so confere o formato
--- codigo_nbs = Nomenclatura Brasileira de Servicos (9 numeros, opcional)
 -- palavras_chave = palavras separadas por virgula pra reconhecer o servico no que o usuario fala
 ALTER TABLE servico ADD codigo_tributacao VARCHAR(6);
 ALTER TABLE servico ADD descricao_codigo VARCHAR(300);
-ALTER TABLE servico ADD codigo_nbs VARCHAR(9);
 ALTER TABLE servico ADD palavras_chave TEXT;
 
 -- codigos dos servicos de exemplo do usuario de teste
