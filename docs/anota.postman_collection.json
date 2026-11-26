@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "ANota API",
-    "description": "Rotas do ANota (projeto integrador) - etapa 3.\n\nRodar o schema.sql e o seed.sql antes. Usuario de teste: marcos@anota.com / 123456.\n\nComece pelo Login: ele salva o token na variavel {{token}} e todas as outras rotas ja mandam o header Authorization: Bearer {{token}}.",
+    "description": "Rotas do ANota (projeto integrador) - etapa 4.\n\nRodar o schema.sql e o seed.sql antes. Usuario de teste: marcos@anota.com / 123456.\n\nComece pelo Login: ele salva o token na variavel {{token}} e todas as outras rotas ja mandam o header Authorization: Bearer {{token}}.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -206,6 +206,266 @@
       ]
     },
     {
+      "name": "Configuracoes",
+      "item": [
+        {
+          "name": "Meus dados",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/configuracoes/dados",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "configuracoes",
+                "dados"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Salvar meus dados",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/configuracoes/dados",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "configuracoes",
+                "dados"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Marcos Pereira\",\n  \"cnpj\": \"45.231.876/0001-87\",\n  \"email\": \"marcos@anota.com\",\n  \"inscricao_municipal\": \"123456\",\n  \"telefone\": \"(49) 99800-1122\",\n  \"cep\": \"89801-000\",\n  \"endereco\": \"Avenida Getúlio Dorneles Vargas\",\n  \"numero\": \"1500\",\n  \"bairro\": \"Centro\",\n  \"municipio\": \"Chapecó\",\n  \"uf\": \"SC\",\n  \"codigo_ibge\": \"4204202\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Salvar meus dados UF invalida (400)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/configuracoes/dados",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "configuracoes",
+                "dados"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Marcos Pereira\",\n  \"cnpj\": \"45231876000187\",\n  \"email\": \"marcos@anota.com\",\n  \"uf\": \"XX\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Configuracao de e-mail (sem a senha)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/configuracoes/email",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "configuracoes",
+                "email"
+              ]
+            },
+            "description": "A senha nunca volta, so tem_senha = true/false"
+          }
+        },
+        {
+          "name": "Salvar configuracao de e-mail",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/configuracoes/email",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "configuracoes",
+                "email"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"smtp_host\": \"smtp.gmail.com\",\n  \"smtp_porta\": 587,\n  \"smtp_usuario\": \"seu@gmail.com\",\n  \"smtp_senha\": \"senha-de-app\",\n  \"nome_remetente\": \"Marcos Pereira\"\n}"
+            },
+            "description": "A senha e salva criptografada (AES-256-GCM, chave CRIPTO_CHAVE do .env)"
+          }
+        },
+        {
+          "name": "Apagar configuracao de e-mail",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/configuracoes/email",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "configuracoes",
+                "email"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"smtp_host\": \"\",\n  \"smtp_usuario\": \"\",\n  \"smtp_senha\": \"\"\n}"
+            },
+            "description": "Volta a usar o SMTP do .env ou o Ethereal"
+          }
+        },
+        {
+          "name": "Enviar e-mail de teste",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/configuracoes/email/teste",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "configuracoes",
+                "email",
+                "teste"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Consultas (ViaCEP e BrasilAPI)",
+      "item": [
+        {
+          "name": "Endereco pelo CEP (ViaCEP)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/consulta/cep/89801140",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "consulta",
+                "cep",
+                "89801140"
+              ]
+            }
+          }
+        },
+        {
+          "name": "CEP nao encontrado (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/consulta/cep/00000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "consulta",
+                "cep",
+                "00000000"
+              ]
+            }
+          }
+        },
+        {
+          "name": "CEP invalido (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/consulta/cep/123",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "consulta",
+                "cep",
+                "123"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Empresa pelo CNPJ (BrasilAPI)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/consulta/cnpj/00000000000191",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "consulta",
+                "cnpj",
+                "00000000000191"
+              ]
+            },
+            "description": "A BrasilAPI tem limite por minuto: se passar volta 429"
+          }
+        },
+        {
+          "name": "CNPJ invalido (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/consulta/cnpj/11111111111111",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "consulta",
+                "cnpj",
+                "11111111111111"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "Clientes",
       "item": [
         {
@@ -245,7 +505,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"nome\": \"Pedro Alves\",\n  \"documento\": \"529.982.247-25\",\n  \"email\": \"pedro@email.com\",\n  \"telefone\": \"(49) 99999-0000\"\n}"
+              "raw": "{\n  \"nome\": \"Pedro Alves\",\n  \"documento\": \"529.982.247-25\",\n  \"email\": \"pedro@email.com\",\n  \"telefone\": \"(49) 99999-0000\",\n  \"tipo\": \"PF\"\n}"
             }
           }
         },
@@ -270,7 +530,58 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"nome\": \"Pedro Alves\",\n  \"documento\": \"111.111.111-11\",\n  \"email\": \"pedro@email.com\",\n  \"telefone\": \"\"\n}"
+              "raw": "{\n  \"nome\": \"Pedro Alves\",\n  \"documento\": \"111.111.111-11\",\n  \"email\": \"pedro@email.com\",\n  \"telefone\": \"\",\n  \"tipo\": \"PF\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Cadastrar cliente CNPJ com tipo errado (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/clientes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clientes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"PF\",\n  \"nome\": \"Empresa X\",\n  \"documento\": \"11.222.333/0001-81\"\n}"
+            },
+            "description": "Tipo PF exige CPF valido"
+          }
+        },
+        {
+          "name": "Cadastrar cliente CEP invalido (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/clientes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clientes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"PF\",\n  \"nome\": \"Teste\",\n  \"documento\": \"111.444.777-35\",\n  \"cep\": \"123\"\n}"
             }
           }
         },
@@ -296,7 +607,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"nome\": \"Joana Silva\",\n  \"documento\": \"52998224725\",\n  \"email\": \"joana.silva@email.com\",\n  \"telefone\": \"(49) 99911-2233\"\n}"
+              "raw": "{\n  \"nome\": \"Joana Silva\",\n  \"documento\": \"52998224725\",\n  \"email\": \"joana.silva@email.com\",\n  \"telefone\": \"(49) 99911-2233\",\n  \"tipo\": \"PF\",\n  \"cep\": \"89801140\",\n  \"endereco\": \"Rua Sete de Setembro - D\",\n  \"numero\": \"320\",\n  \"bairro\": \"Centro\",\n  \"municipio\": \"Chapecó\",\n  \"uf\": \"SC\",\n  \"codigo_ibge\": \"4204202\"\n}"
             }
           }
         },
@@ -360,7 +671,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"descricao\": \"Instalacao eletrica\",\n  \"valor\": \"350,00\"\n}"
+              "raw": "{\n  \"descricao\": \"Instalacao eletrica\",\n  \"valor\": \"350,00\",\n  \"codigo_tributacao\": \"07.02.01\",\n  \"descricao_codigo\": \"Execução de obras de construção civil, hidráulica ou elétrica\",\n  \"palavras_chave\": \"tomada, fiação, disjuntor\"\n}"
             }
           }
         },
@@ -385,8 +696,34 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"descricao\": \"Teste\",\n  \"valor\": 0\n}"
+              "raw": "{\n  \"descricao\": \"Teste\",\n  \"valor\": 0,\n  \"codigo_tributacao\": \"070501\"\n}"
             }
+          }
+        },
+        {
+          "name": "Cadastrar servico codigo invalido (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/servicos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "servicos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"descricao\": \"Teste\",\n  \"valor\": 100,\n  \"codigo_tributacao\": \"07.02\"\n}"
+            },
+            "description": "O codigo de tributacao nacional precisa ter 6 numeros"
           }
         },
         {
@@ -411,7 +748,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"descricao\": \"Pintura\",\n  \"valor\": 1000\n}"
+              "raw": "{\n  \"descricao\": \"Pintura\",\n  \"valor\": 1000,\n  \"codigo_tributacao\": \"070501\",\n  \"descricao_codigo\": \"Reparação, conservação e reforma de edifícios\",\n  \"palavras_chave\": \"pintura, pintei, tinta\"\n}"
             }
           }
         },
@@ -438,17 +775,74 @@
       "name": "Notas",
       "item": [
         {
-          "name": "Listar notas",
+          "name": "Listar notas (filtro mes/ano/situacao/cliente)",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/notas",
+              "raw": "{{baseUrl}}/notas?ano=2026&mes=10&status=emitida&busca=construtora",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "notas"
+              ],
+              "query": [
+                {
+                  "key": "ano",
+                  "value": "2026"
+                },
+                {
+                  "key": "mes",
+                  "value": "10"
+                },
+                {
+                  "key": "status",
+                  "value": "emitida"
+                },
+                {
+                  "key": "busca",
+                  "value": "construtora"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Listar notas filtro invalido (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notas?mes=13",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notas"
+              ],
+              "query": [
+                {
+                  "key": "mes",
+                  "value": "13"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Detalhe da nota (dados do DANFSe)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notas/9",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notas",
+                "9"
               ]
             }
           }
@@ -481,7 +875,7 @@
           }
         },
         {
-          "name": "Interpretar faltando informacao",
+          "name": "Chat 1: texto com cliente nao cadastrado",
           "request": {
             "method": "POST",
             "header": [
@@ -502,8 +896,36 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"texto\": \"fiz um reboco ontem\"\n}"
-            }
+              "raw": "{\n  \"texto\": \"Pintei a casa do Pedro Alves, ficou mil e oitocentos\"\n}"
+            },
+            "description": "Devolve aguardando = documento e a pergunta do CPF/CNPJ"
+          }
+        },
+        {
+          "name": "Chat 2: resposta com o CPF (continua a mesma nota)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notas/interpretar",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notas",
+                "interpretar"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"texto\": \"111 444 777 35\",\n  \"rascunho\": {\n    \"cliente_id\": null,\n    \"servico_id\": 3,\n    \"valor\": 1800,\n    \"valor_do_cadastro\": false,\n    \"descricao\": \"Pintura\",\n    \"cliente_nome_falado\": \"Pedro Alves\",\n    \"documento\": \"\",\n    \"aguardando\": \"documento\",\n    \"origem\": \"simulacao\"\n  }\n}"
+            },
+            "description": "Manda o rascunho que voltou na mensagem anterior. Como o cliente nao existe, volta acao = cadastrar_cliente"
           }
         },
         {
@@ -527,7 +949,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"cliente_id\": 1,\n  \"servico_id\": 3,\n  \"descricao\": \"Pintura da casa\",\n  \"valor\": 1500\n}"
+              "raw": "{\n  \"cliente_id\": 1,\n  \"servico_id\": 3,\n  \"descricao\": \"Pintura da casa\",\n  \"valor\": 1500,\n  \"competencia\": \"2026-11\"\n}"
             }
           }
         },
@@ -594,12 +1016,12 @@
       "name": "Faturamento",
       "item": [
         {
-          "name": "Faturamento do ano",
+          "name": "Faturamento do ano + resumo do mes",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/faturamento?ano=2026",
+              "raw": "{{baseUrl}}/faturamento?ano=2026&mes=10",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -610,6 +1032,10 @@
                 {
                   "key": "ano",
                   "value": "2026"
+                },
+                {
+                  "key": "mes",
+                  "value": "10"
                 }
               ]
             }
