@@ -79,20 +79,82 @@ a {
   border-bottom-color: #0F6E56;
 }
 
+/* nome do usuario com a setinha, no canto direito */
 .usuario-menu {
   margin-left: auto;
+  position: relative;
+}
+
+.usuario-botao {
+  height: 36px;
+  margin: 0;
+  padding: 0 10px 0 12px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #16201C;
   font-size: 14px;
-  color: #5A6560;
+  font-weight: 500;
 }
 
-.usuario-menu a {
-  color: #5A6560;
+.usuario-botao:hover,
+.usuario-botao.aberto {
+  background: #F3F6F4;
+  border-color: #DCE1DE;
 }
 
-/* circulo com as iniciais (no menu e nas listas) */
+.usuario-botao svg {
+  color: #5A6560;
+  transition: transform 0.15s;
+}
+
+.usuario-botao.aberto svg {
+  transform: rotate(180deg);
+}
+
+/* a caixinha que abre embaixo do nome */
+.usuario-lista {
+  position: absolute;
+  right: 0;
+  top: 42px;
+  min-width: 180px;
+  background: #FFFFFF;
+  border: 1px solid #DCE1DE;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(22, 32, 28, 0.08);
+  padding: 6px;
+  z-index: 20;
+}
+
+.usuario-lista a,
+.usuario-lista button {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0;
+  padding: 9px 12px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: #16201C;
+  font-size: 14px;
+  font-weight: 400;
+  text-decoration: none;
+}
+
+.usuario-lista a:hover,
+.usuario-lista button:hover {
+  background: #F3F6F4;
+}
+
+.usuario-lista button {
+  color: #A32D2D;
+}
+
+/* circulo com as iniciais (nas listas de clientes) */
 .iniciais {
   width: 36px;
   height: 36px;
@@ -711,7 +773,10 @@ td.valor-celula {
     gap: 18px;
   }
   .usuario-menu .nome-usuario {
-    display: none;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .conteudo {
     padding: 24px 20px;
