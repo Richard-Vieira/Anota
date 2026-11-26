@@ -610,9 +610,53 @@ const SQL_NOTAS = `SELECT n.id, n.descricao, n.valor, to_char(n.data_emissao, 'Y
                    JOIN servico s ON s.id = n.servico_id
                    WHERE n.usuario_id = $1`;
 
+// ajustado com IA para melhorar o codigo
+// filtros das notas (todos opcionais): ?ano=2026&mes=11&status=emitida&busca=joana
+// monta o WHERE com parametros ($2, $3...) pra nao ter SQL injection
+// devolve null + erro se algum filtro vier errado
+function filtrosNotas(query, usuario_id, comStatus) {
+  const where = ['n.usuario_id = $1'];
+  const params = [usuario_id];
+  const { ano, mes, status, busca } = query;
+
+  if (!val.vazio(ano)) {
+    if (!/^\d{4}$/.test(String(ano))) return { erro: 'Ano inválido' };
+    params.push(Number(ano));
+    where.push('EXTRACT(YEAR FROM n.data_emissao) = $' + params.length);
+  }
+  if (!val.vazio(mes)) {
+    if (!/^\d{1,2}$/.test(String(mes)) || Number(mes) < 1 || Number(mes) > 12) return { erro: 'Mês inválido' };
+    params.push(Number(mes));
+    where.push('EXTRACT(MONTH FROM n.data_emissao) = $' + params.length);
+  }
+  if (comStatus && !val.vazio(status)) {
+    if (!['pendente', 'emitida', 'enviada', 'cancelada'].includes(status)) return { erro: 'Situação inválida' };
+    params.push(status);
+    where.push('n.status = $' + params.length);
+  }
+  if (!val.vazio(busca)) {
+    if (String(busca).length > 100) return { erro: 'Busca muito grande' };
+    // procura pelo nome do cliente ou pelo CPF/CNPJ
+    params.push('%' + String(busca).trim() + '%');
+    let cond = 'c.nome ILIKE $' + params.length;
+    const numeros = val.soNumeros(busca);
+    if (numeros.length >= 3) {
+      params.push('%' + numeros + '%');
+      cond += ' OR c.documento LIKE $' + params.length;
+    }
+    where.push('(' + cond + ')');
+  }
+  return { where: where.join(' AND '), params: params };
+}
+
 app.get('/notas', verificaToken, async (req, res) => {
+  const f = filtrosNotas(req.query, req.usuario_id, true);
+  if (f.erro) {
+    return res.status(400).json({ erro: f.erro });
+  }
   try {
-    const dados = await pool.query(SQL_NOTAS + ' ORDER BY n.data_emissao DESC, n.id DESC', [req.usuario_id]);
+    const sql = SQL_NOTAS.replace('WHERE n.usuario_id = $1', 'WHERE ' + f.where);
+    const dados = await pool.query(sql + ' ORDER BY n.data_emissao DESC, n.id DESC', f.params);
     res.json(dados.rows);
   } catch (err) {
     trataErro(res, err);
@@ -923,6 +967,9 @@ app.get('/faturamento', verificaToken, async (req, res) => {
   if (val.vazio(ano)) {
     ano = new Date().getFullYear();
   }
+  if (!/^\d{4}$/.test(String(ano))) {
+    return res.status(400).json({ erro: 'Ano inválido' });
+  }
 
   try {
     const total = await pool.query(
@@ -937,6 +984,21 @@ app.get('/faturamento', verificaToken, async (req, res) => {
       [req.usuario_id, ano]
     );
 
+    // resumo do periodo filtrado (mes + busca por cliente): total, quantidade e ticket medio
+    // so conta emitida e enviada (pendente ainda nao foi emitida e cancelada nao vale)
+    const f = filtrosNotas({ ano: ano, mes: req.query.mes, busca: req.query.busca }, req.usuario_id, false);
+    if (f.erro) {
+      return res.status(400).json({ erro: f.erro });
+    }
+    const periodo = await pool.query(
+      `SELECT COALESCE(SUM(n.valor), 0) AS total, COUNT(*)::int AS quantidade
+       FROM nota_fiscal n JOIN cliente c ON c.id = n.cliente_id
+       WHERE ` + f.where + ` AND n.status IN ('emitida', 'enviada')`,
+      f.params
+    );
+    const totalPeriodo = Number(periodo.rows[0].total);
+    const qtdPeriodo = periodo.rows[0].quantidade;
+
     // monta os 12 meses, os que nao tem nota ficam 0
     const meses = [];
     for (let m = 1; m <= 12; m++) {
@@ -949,7 +1011,13 @@ app.get('/faturamento', verificaToken, async (req, res) => {
       total: Number(total.rows[0].total),
       // limite do MEI = 81 mil por ano (conferir se mudou)
       limite_mei: 81000,
-      meses: meses
+      meses: meses,
+      periodo: {
+        mes: val.vazio(req.query.mes) ? null : Number(req.query.mes),
+        total: totalPeriodo,
+        quantidade: qtdPeriodo,
+        ticket_medio: qtdPeriodo > 0 ? Math.round((totalPeriodo / qtdPeriodo) * 100) / 100 : 0
+      }
     });
   } catch (err) {
     trataErro(res, err);

@@ -898,9 +898,34 @@ button.largo {
 
 .grafico-coluna {
   flex: 1;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
   text-align: center;
   font-size: 12px;
+  font-weight: 400;
   color: #5A6560;
+}
+
+.grafico-coluna:hover {
+  background: #F3F6F4;
+}
+
+.grafico-coluna:hover .grafico-barra {
+  background: #9AA7A1;
+}
+
+/* mes filtrado fica verde */
+.grafico-coluna.selecionado .grafico-barra {
+  background: #0F6E56;
+}
+
+.grafico-coluna.selecionado span {
+  color: #16201C;
+  font-weight: 500;
 }
 
 .grafico-area {
@@ -917,9 +942,6 @@ button.largo {
   min-height: 2px;
 }
 
-.grafico-barra.atual {
-  background: #0F6E56;
-}
 
 .pergunta {
   margin-bottom: 40px;
@@ -961,6 +983,105 @@ button.largo {
 .filtro select {
   width: auto;
   min-width: 200px;
+}
+
+/* filtros do topo da tela Notas */
+.filtros {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.filtros h1 {
+  margin: 0;
+}
+
+.filtros-campos {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filtros-campos select,
+.filtros-campos input {
+  width: auto;
+  height: 40px;
+  font-size: 14px;
+}
+
+.filtros-campos input {
+  width: 200px;
+}
+
+/* cards de total, quantidade e ticket medio */
+.cards-resumo {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.card-resumo {
+  border: 1px solid #DCE1DE;
+  border-radius: 12px;
+  padding: 16px 20px;
+}
+
+.card-resumo strong {
+  display: block;
+  font-size: 28px;
+  margin-top: 4px;
+}
+
+.linha-clicavel {
+  cursor: pointer;
+}
+
+.linha-clicavel:hover td {
+  background: #F7FAF8;
+}
+
+/* janela do detalhe da nota */
+.modal-fundo {
+  position: fixed;
+  inset: 0;
+  background: rgba(22, 32, 28, 0.35);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 40px 16px;
+  overflow-y: auto;
+  z-index: 50;
+}
+
+.modal {
+  background: #FFFFFF;
+  border-radius: 14px;
+  padding: 24px;
+  width: 100%;
+  max-width: 820px;
+}
+
+.modal-topo {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.modal-topo .chip {
+  margin-top: 6px;
+}
+
+.modal-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  justify-content: flex-end;
 }
 
 /* tabelas */
@@ -1232,6 +1353,9 @@ td.valor-celula {
 @media (max-width: 900px) {
   .painel-fixo {
     position: static;
+  }
+  .cards-resumo {
+    grid-template-columns: 1fr;
   }
   .duas-colunas,
   .duas-colunas.lista-e-form,
