@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { API } from '../config.js'
 
 function Login() {
@@ -6,6 +7,9 @@ function Login() {
   const [senha, setSenha] = useState('')
   const [erro, setErro] = useState('')
   const [carregando, setCarregando] = useState(false)
+
+  // quando o token vence o sistema manda pra ca com ?expirou=1
+  const expirou = window.location.search.includes('expirou')
 
   async function entrar(e) {
     e.preventDefault()
@@ -26,12 +30,13 @@ function Login() {
         body: JSON.stringify({ email, senha })
       })
       const dados = await resposta.json()
-      console.log('login', dados)
+      console.log('login', dados.usuario)
       if (!resposta.ok) {
         setErro(dados.erro)
       } else {
-        // guarda o usuario no navegador (sem jwt por enquanto)
-        localStorage.setItem('usuario', JSON.stringify(dados))
+        // guarda o token (JWT) e o usuario no navegador
+        localStorage.setItem('token', dados.token)
+        localStorage.setItem('usuario', JSON.stringify(dados.usuario))
         // recarrega pra o App ver que logou
         window.location.href = '/nova-nota'
       }
@@ -42,23 +47,52 @@ function Login() {
   }
 
   return (
-    <div className="login-box">
-      <h1 style={{ color: '#0F6E56', marginBottom: 0 }}>ANota</h1>
-      <p style={{ color: '#666', marginTop: 4 }}>Sua nota fiscal por áudio</p>
+    <div className="login-tela">
+      <LadoApresentacao />
 
-      <form onSubmit={entrar}>
-        <label>Email</label>
-        <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" />
+      <div className="login-form">
+        <h1>Entrar</h1>
+        <p className="texto-menor" style={{ margin: 0 }}>Use o e-mail e a senha da sua conta.</p>
 
-        <label>Senha</label>
-        <input type="password" value={senha} onChange={e => setSenha(e.target.value)} />
+        {expirou && <p className="aviso">Sua sessão expirou, entre de novo.</p>}
 
-        {erro && <p className="erro">{erro}</p>}
+        <form onSubmit={entrar}>
+          <label>E-mail</label>
+          <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" />
 
-        <button type="submit" disabled={carregando} style={{ width: '100%' }}>
-          {carregando ? 'Entrando...' : 'Entrar'}
-        </button>
-      </form>
+          <label>Senha</label>
+          <input type="password" value={senha} onChange={e => setSenha(e.target.value)} />
+
+          {erro && <p className="erro">{erro}</p>}
+
+          <button type="submit" className="largo" disabled={carregando}>
+            {carregando ? 'Entrando...' : 'Entrar'}
+          </button>
+        </form>
+
+        <p className="texto-menor" style={{ marginTop: 20 }}>
+          Ainda não tem conta? <Link to="/cadastro">Criar conta</Link>
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// lado esquerdo do login (o cadastro usa o mesmo)
+export function LadoApresentacao() {
+  return (
+    <div className="login-lado">
+      <span className="marca">ANota</span>
+      <h1>Fala o serviço. A nota sai pronta.</h1>
+      <p>
+        Você conta em voz alta o que fez, para quem e quanto cobrou. O ANota entende,
+        monta a nota fiscal do seu MEI e manda para o cliente.
+      </p>
+      <div className="exemplo-frase">
+        <small>Exemplo do que você pode falar</small>
+        "Fiz a <span className="chip">pintura</span> da casa da <span className="chip">Joana Silva</span>,
+        ficou <span className="chip">R$ 1.500</span>"
+      </div>
     </div>
   )
 }

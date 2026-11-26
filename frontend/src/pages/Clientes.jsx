@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react'
-import { API } from '../config.js'
+import { api, formataDinheiro, pegaIniciais } from '../api.js'
 
 function Clientes() {
-  const usuario = JSON.parse(localStorage.getItem('usuario'))
   const [lista, setLista] = useState([])
   const [nome, setNome] = useState('')
   const [documento, setDocumento] = useState('')
@@ -11,11 +10,18 @@ function Clientes() {
   const [editando, setEditando] = useState(null) // id do cliente que ta editando
   const [erro, setErro] = useState('')
   const [msg, setMsg] = useState('')
+  const [notas, setNotas] = useState([]) // so pra contar as notas de cada cliente
+  const [busca, setBusca] = useState('')
 
-  function carregar() {
-    fetch(API + '/clientes?usuario_id=' + usuario.id)
-      .then(r => r.json())
-      .then(dados => setLista(dados))
+  async function carregar() {
+    const r = await api('/clientes')
+    if (r.ok) {
+      setLista(r.dados)
+    } else {
+      setErro(r.dados.erro)
+    }
+    const r2 = await api('/notas')
+    if (r2.ok) setNotas(r2.dados)
   }
 
   useEffect(() => {
@@ -41,33 +47,27 @@ function Clientes() {
       return
     }
 
-    let url = API + '/clientes'
+    let url = '/clientes'
     let metodo = 'POST'
     if (editando) {
-      url = API + '/clientes/' + editando
+      url = '/clientes/' + editando
       metodo = 'PUT'
     }
 
-    try {
-      const resp = await fetch(url, {
-        method: metodo,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ usuario_id: usuario.id, nome, documento, email, telefone })
-      })
-      const dados = await resp.json()
-      if (!resp.ok) {
-        setErro(dados.erro)
-        return
-      }
-      setMsg(editando ? 'Cliente atualizado' : 'Cliente cadastrado')
-      limpar()
-      carregar()
-    } catch (err) {
-      setErro('Erro ao conectar no servidor')
+    // o usuario_id nao vai mais, a api pega pelo token
+    const r = await api(url, { method: metodo, body: { nome, documento, email, telefone } })
+    if (!r.ok) {
+      setErro(r.dados.erro)
+      return
     }
+    setMsg(editando ? 'Cliente atualizado' : 'Cliente cadastrado')
+    limpar()
+    carregar()
   }
 
   function editar(cli) {
+    setErro('')
+    setMsg('')
     setEditando(cli.id)
     setNome(cli.nome)
     setDocumento(cli.documento)
@@ -76,71 +76,83 @@ function Clientes() {
   }
 
   async function excluir(id) {
-    if (!confirm('Excluir esse cliente?')) return
     setErro('')
     setMsg('')
-    const resp = await fetch(API + '/clientes/' + id + '?usuario_id=' + usuario.id, { method: 'DELETE' })
-    const dados = await resp.json()
-    if (!resp.ok) {
-      setErro(dados.erro)
+    if (!confirm('Excluir esse cliente?')) return
+    const r = await api('/clientes/' + id, { method: 'DELETE' })
+    if (!r.ok) {
+      setErro(r.dados.erro)
     } else {
       setMsg('Cliente excluído')
       carregar()
     }
   }
 
-  return (
-    <div>
-      <h2>Clientes</h2>
+  // quantas notas e quanto cada cliente ja pagou (so emitidas e enviadas, igual o faturamento)
+  function resumoCliente(id) {
+    const dele = notas.filter(n => n.cliente_id == id && (n.status == 'emitida' || n.status == 'enviada'))
+    const total = dele.reduce((soma, n) => soma + Number(n.valor), 0)
+    return { qtd: dele.length, total }
+  }
 
-      <form className="card" onSubmit={salvar}>
-        <h3 style={{ marginTop: 0 }}>{editando ? 'Editar cliente' : 'Novo cliente'}</h3>
+  const b = busca.trim().toLowerCase()
+  const filtrados = lista.filter(c => c.nome.toLowerCase().includes(b) || String(c.documento).includes(b))
+
+  return (
+    <div className="duas-colunas lista-e-form">
+      <div>
+        <h1>Clientes</h1>
+        <input className="busca" value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por nome ou CPF/CNPJ" />
+
+        {filtrados.length == 0 && (
+          <p className="lista-vazia">{lista.length == 0 ? 'Nenhum cliente cadastrado ainda' : 'Nenhum cliente encontrado'}</p>
+        )}
+        {filtrados.map(c => {
+          const r = resumoCliente(c.id)
+          return (
+            <div className="lista-linha" key={c.id}>
+              <span className="iniciais">{pegaIniciais(c.nome)}</span>
+              <div className="lista-info">
+                <div className="lista-nome">{c.nome}</div>
+                <div className="lista-doc">{c.documento}{c.email ? ' · ' + c.email : ''}</div>
+              </div>
+              <div className="lista-numeros">
+                <strong>{formataDinheiro(r.total)}</strong>
+                {r.qtd} {r.qtd == 1 ? 'nota' : 'notas'}
+              </div>
+              <div className="lista-acoes">
+                <button className="pequeno" onClick={() => editar(c)}>Editar</button>
+                <button className="pequeno perigo" onClick={() => excluir(c.id)}>Excluir</button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <form className="painel" onSubmit={salvar}>
+        <h2>{editando ? 'Editar cliente' : 'Novo cliente'}</h2>
         <label>Nome</label>
         <input value={nome} onChange={e => setNome(e.target.value)} />
 
         <label>CPF ou CNPJ</label>
         <input value={documento} onChange={e => setDocumento(e.target.value)} placeholder="só números ou com pontuação" />
 
-        <label>Email</label>
+        <label>E-mail</label>
         <input type="email" value={email} onChange={e => setEmail(e.target.value)} />
 
         <label>Telefone</label>
         <input value={telefone} onChange={e => setTelefone(e.target.value)} />
 
-        <button type="submit">Salvar</button>
-        {editando && (
-          <button type="button" className="secundario" onClick={limpar} style={{ marginLeft: 8 }}>Cancelar</button>
-        )}
+        {erro && <p className="erro">{erro}</p>}
+        {msg && <p className="sucesso">{msg}</p>}
+
+        <div className="botoes">
+          <button type="submit">Salvar cliente</button>
+          {editando && (
+            <button type="button" className="secundario" onClick={limpar}>Cancelar</button>
+          )}
+        </div>
       </form>
-
-      {erro && <p className="erro">{erro}</p>}
-      {msg && <p className="sucesso">{msg}</p>}
-
-      <table>
-        <thead>
-          <tr>
-            <th>Nome</th>
-            <th>CPF/CNPJ</th>
-            <th>Email</th>
-            <th>Telefone</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {lista.map(c => (
-            <tr key={c.id}>
-              <td>{c.nome}</td>
-              <td>{c.documento}</td>
-              <td>{c.email}</td>
-              <td>{c.telefone}</td>
-              <td style={{ whiteSpace: 'nowrap' }}>
-                <button className="pequeno" onClick={() => editar(c)}>Editar</button>
-                <button className="pequeno perigo" onClick={() => excluir(c.id)}>Excluir</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   )
 }
