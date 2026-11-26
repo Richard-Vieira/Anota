@@ -46,11 +46,18 @@ CREATE TABLE cliente (
 );
 
 -- servicos que o MEI faz
+-- codigo_tributacao = codigo de tributacao nacional da NFS-e (6 numeros, ex: 070201 = 07.02.01)
+-- codigo_nbs = Nomenclatura Brasileira de Servicos (9 numeros, opcional)
+-- palavras_chave = separadas por virgula, usadas pra achar o servico no que o usuario fala
 CREATE TABLE servico (
     id SERIAL PRIMARY KEY,
     usuario_id INT NOT NULL REFERENCES usuario(id),
     descricao VARCHAR(150) NOT NULL,
-    valor DECIMAL(10,2) NOT NULL
+    valor DECIMAL(10,2) NOT NULL,
+    codigo_tributacao VARCHAR(6) NOT NULL,
+    descricao_codigo VARCHAR(300),
+    codigo_nbs VARCHAR(9),
+    palavras_chave TEXT
 );
 
 -- notas fiscais

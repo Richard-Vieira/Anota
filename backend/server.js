@@ -440,31 +440,70 @@ app.delete('/clientes/:id', verificaToken, async (req, res) => {
 // =============== SERVICOS ===============
 app.get('/servicos', verificaToken, async (req, res) => {
   try {
-    const dados = await pool.query('SELECT * FROM servico WHERE usuario_id = $1 ORDER BY descricao', [req.usuario_id]);
+    // ja traz quantas notas e quanto faturou com cada servico (so emitidas e enviadas)
+    const dados = await pool.query(
+      `SELECT s.*,
+              (SELECT COUNT(*) FROM nota_fiscal n WHERE n.servico_id = s.id AND n.status IN ('emitida', 'enviada'))::int AS qtd_notas,
+              (SELECT COALESCE(SUM(n.valor), 0) FROM nota_fiscal n WHERE n.servico_id = s.id AND n.status IN ('emitida', 'enviada')) AS total_notas
+       FROM servico s WHERE s.usuario_id = $1 ORDER BY s.descricao`,
+      [req.usuario_id]
+    );
     res.json(dados.rows);
   } catch (err) {
     trataErro(res, err);
   }
 });
 
-app.post('/servicos', verificaToken, async (req, res) => {
-  const { descricao, valor } = req.body;
+// validacao do servico (usa no post e no put)
+// o codigo de tributacao e so conferido no formato (6 numeros), nao tem a tabela oficial aqui
+function validaServico(body) {
+  const { descricao, valor, codigo_tributacao, codigo_nbs, descricao_codigo, palavras_chave } = body;
+  if (val.vazio(descricao)) return 'A descrição do serviço é obrigatória';
+  if (String(descricao).trim().length > 150) return 'A descrição pode ter no máximo 150 letras';
+  if (val.vazio(codigo_tributacao)) return 'O código de tributação nacional é obrigatório';
+  if (!/^\d{6}$/.test(val.soNumeros(codigo_tributacao))) return 'O código de tributação nacional tem 6 números (00.00.00)';
+  if (!val.vazio(codigo_nbs) && !/^\d{9}$/.test(val.soNumeros(codigo_nbs))) return 'O código NBS tem 9 números (0.0000.00.00)';
+  if (!val.vazio(descricao_codigo) && String(descricao_codigo).length > 300) return 'A descrição do código pode ter no máximo 300 letras';
+  if (!val.vazio(palavras_chave) && String(palavras_chave).length > 500) return 'Palavras-chave demais (máximo 500 letras)';
+  if (val.vazio(valor)) return 'O valor é obrigatório';
+  if (!val.validarValor(valor)) return 'O valor tem que ser maior que zero';
+  return null;
+}
 
-  if (val.vazio(descricao)) {
-    return res.status(400).json({ erro: 'A descrição do serviço é obrigatória' });
+// "Pintura,  pintei ,TINTA,," -> "pintura, pintei, tinta" (sem repetidas e sem vazias)
+function arrumaPalavras(txt) {
+  if (val.vazio(txt)) return null;
+  const lista = [];
+  for (const p of String(txt).split(',')) {
+    const palavra = p.trim().toLowerCase();
+    if (palavra != '' && !lista.includes(palavra)) lista.push(palavra);
   }
-  if (val.vazio(valor)) {
-    return res.status(400).json({ erro: 'O valor é obrigatório' });
-  }
-  if (!val.validarValor(valor)) {
-    return res.status(400).json({ erro: 'O valor tem que ser maior que zero' });
+  return lista.length > 0 ? lista.join(', ') : null;
+}
+
+// monta os parametros na ordem das colunas (igual no insert e no update)
+function paramsServico(b) {
+  return [
+    b.descricao.trim(),
+    Number(String(b.valor).replace(',', '.')),
+    val.soNumeros(b.codigo_tributacao),
+    textoOuNull(b.descricao_codigo, 300),
+    val.vazio(b.codigo_nbs) ? null : val.soNumeros(b.codigo_nbs),
+    arrumaPalavras(b.palavras_chave)
+  ];
+}
+
+app.post('/servicos', verificaToken, async (req, res) => {
+  const erro = validaServico(req.body);
+  if (erro) {
+    return res.status(400).json({ erro: erro });
   }
 
   try {
-    const v = Number(String(valor).replace(',', '.'));
     const resultado = await pool.query(
-      'INSERT INTO servico (usuario_id, descricao, valor) VALUES ($1, $2, $3) RETURNING *',
-      [req.usuario_id, descricao.trim(), v]
+      `INSERT INTO servico (descricao, valor, codigo_tributacao, descricao_codigo, codigo_nbs, palavras_chave, usuario_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [...paramsServico(req.body), req.usuario_id]
     );
     res.status(201).json(resultado.rows[0]);
   } catch (err) {
@@ -474,23 +513,16 @@ app.post('/servicos', verificaToken, async (req, res) => {
 
 app.put('/servicos/:id', verificaToken, async (req, res) => {
   const id = req.params.id;
-  const { descricao, valor } = req.body;
-
-  if (val.vazio(descricao)) {
-    return res.status(400).json({ erro: 'A descrição do serviço é obrigatória' });
-  }
-  if (val.vazio(valor)) {
-    return res.status(400).json({ erro: 'O valor é obrigatório' });
-  }
-  if (!val.validarValor(valor)) {
-    return res.status(400).json({ erro: 'O valor tem que ser maior que zero' });
+  const erro = validaServico(req.body);
+  if (erro) {
+    return res.status(400).json({ erro: erro });
   }
 
   try {
-    const v = Number(String(valor).replace(',', '.'));
     const res2 = await pool.query(
-      'UPDATE servico SET descricao = $1, valor = $2 WHERE id = $3 AND usuario_id = $4 RETURNING *',
-      [descricao.trim(), v, id, req.usuario_id]
+      `UPDATE servico SET descricao = $1, valor = $2, codigo_tributacao = $3, descricao_codigo = $4, codigo_nbs = $5, palavras_chave = $6
+       WHERE id = $7 AND usuario_id = $8 RETURNING *`,
+      [...paramsServico(req.body), id, req.usuario_id]
     );
     if (res2.rows.length == 0) {
       return res.status(404).json({ erro: 'Serviço não encontrado' });

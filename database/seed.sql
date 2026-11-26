@@ -12,11 +12,21 @@ INSERT INTO cliente (usuario_id, nome, documento, email, telefone) VALUES
 (1, 'Construtora Oeste Ltda', '12398765000100', 'contato@construtoraoeste.com.br', '(49) 3322-4455'),
 (1, 'Ana Lima', '71423098650', 'ana.lima@email.com', '(49) 99133-5566');
 
-INSERT INTO servico (usuario_id, descricao, valor) VALUES
-(1, 'Reboco e acabamento', 1200.00),
-(1, 'Assentamento de piso', 1800.00),
-(1, 'Pintura', 950.00),
-(1, 'Pequenos reparos', 250.00);
+-- codigos de tributacao nacional (construcao civil e reformas = subitens 7.02 e 7.05 da LC 116)
+-- conferir sempre na tabela oficial do portal da NFS-e: https://www.gov.br/nfse
+INSERT INTO servico (usuario_id, descricao, valor, codigo_tributacao, descricao_codigo, palavras_chave) VALUES
+(1, 'Reboco e acabamento', 1200.00, '070201',
+ 'Execução, por administração, empreitada ou subempreitada, de obras de construção civil, hidráulica ou elétrica e de outras obras semelhantes',
+ 'reboco, rebocar, rebocou, acabamento, massa, fachada, muro'),
+(1, 'Assentamento de piso', 1800.00, '070201',
+ 'Execução, por administração, empreitada ou subempreitada, de obras de construção civil, hidráulica ou elétrica e de outras obras semelhantes',
+ 'piso, assentei, assentar, assentamento, porcelanato, cerâmica, azulejo'),
+(1, 'Pintura', 950.00, '070501',
+ 'Reparação, conservação e reforma de edifícios, estradas, pontes, portos e congêneres',
+ 'pintura, pintei, pintar, pintou, tinta, parede'),
+(1, 'Pequenos reparos', 250.00, '070501',
+ 'Reparação, conservação e reforma de edifícios, estradas, pontes, portos e congêneres',
+ 'reparo, conserto, consertei, arrumei, torneira, porta, telhado, troca');
 
 -- notas de junho a novembro de 2026
 -- as emitidas/enviadas tem numero da nfse, a pendente ainda nao (nao foi emitida)

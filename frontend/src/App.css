@@ -734,6 +734,53 @@ td.valor-celula {
   gap: 2px;
 }
 
+/* linha que esta sendo editada no painel do lado */
+.lista-linha.selecionada {
+  background: #F7FAF8;
+  box-shadow: -12px 0 0 #F7FAF8, 12px 0 0 #F7FAF8;
+}
+
+/* codigo de tributacao em destaque pequeno do lado do nome */
+.codigo {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border: 1px solid #DCE1DE;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #4F5B56;
+  font-variant-numeric: tabular-nums;
+  vertical-align: 1px;
+}
+
+.codigo.sem-codigo {
+  border-color: #F0D49A;
+  background: #FDF3DC;
+  color: #6B4300;
+}
+
+/* descricao do codigo fica numa linha so, com ... no fim */
+.lista-desc-codigo {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* o formulario acompanha a rolagem da lista */
+.painel-fixo {
+  position: sticky;
+  top: 24px;
+}
+
+.ajuda-codigo {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #5A6560;
+}
+
 .lista-vazia {
   color: #5A6560;
   padding: 24px 0;
@@ -830,6 +877,9 @@ td.valor-celula {
 
 /* =============== celular =============== */
 @media (max-width: 900px) {
+  .painel-fixo {
+    position: static;
+  }
   .duas-colunas,
   .duas-colunas.lista-e-form,
   .resumo,
